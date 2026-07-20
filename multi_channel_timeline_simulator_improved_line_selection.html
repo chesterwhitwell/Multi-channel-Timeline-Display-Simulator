@@ -1,0 +1,1608 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Multi-channel Timeline Display Simulator</title>
+<style>
+:root{
+  --panel:#171a20;--line:rgba(255,255,255,.10);--text:#f2f4f7;--muted:#aeb6c2;
+  --lcd:#b8c5a8;--lcdLight:#c7d1b8;--lcdShadow:#7c866f;
+  --seg:#18201b;--segOff:rgba(24,32,27,.08);
+  --blue:#9bb7ff;--green:#a8f0bd;--yellow:#ffd28a;--danger:#ffb0b0;
+}
+*{box-sizing:border-box}
+body{margin:0;min-height:100vh;background:radial-gradient(circle at top,#2a2f37 0,#15171b 48%,#08090b 100%);color:var(--text);font-family:Arial,Helvetica,sans-serif;padding:24px;overflow-x:hidden}
+.app{width:min(1360px,100%);max-width:100%;margin:0 auto;background:linear-gradient(145deg,#30343c,#181b20);border:1px solid var(--line);border-radius:28px;box-shadow:0 24px 80px rgba(0,0,0,.48);padding:28px;overflow:hidden}
+.header{display:flex;justify-content:space-between;gap:20px;align-items:flex-start;margin-bottom:22px}
+h1{font-size:clamp(1.3rem,3vw,2rem);margin:0 0 8px}
+p{color:var(--muted);line-height:1.45}.subtitle{max-width:850px;margin:0}
+.badge{white-space:nowrap;font-size:.78rem;text-transform:uppercase;letter-spacing:.14em;color:#cbd3df;padding:9px 12px;border-radius:999px;background:rgba(255,255,255,.08);border:1px solid var(--line)}
+.buttons{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+button{cursor:pointer;border:0;border-radius:12px;padding:12px 14px;font-weight:700;color:#071018;background:var(--blue);min-height:44px;transition:transform 140ms ease,filter 140ms ease,background-color 140ms ease,border-color 140ms ease,box-shadow 140ms ease}
+button:hover:not(:disabled){filter:brightness(1.06);transform:translateY(-1px)}button:active:not(:disabled){transform:translateY(0)}button:focus-visible{outline:0;box-shadow:0 0 0 3px rgba(155,183,255,.25)}
+button.secondary{color:var(--text);background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.1)}
+button.danger{color:#071018;background:var(--danger)}
+button:disabled{opacity:.45;cursor:not-allowed;transform:none}
+.meter{background:#0c0e12;border:8px solid #050608;border-radius:24px;padding:28px;box-shadow:inset 0 0 0 1px rgba(255,255,255,.06),inset 0 -18px 40px rgba(0,0,0,.35);overflow:hidden}
+.readouts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px}
+.bezel{background:#050608;border-radius:18px;padding:18px;box-shadow:inset 0 0 12px rgba(255,255,255,.08),0 8px 18px rgba(0,0,0,.45);min-width:0}
+.lcd{position:relative;min-height:215px;border-radius:12px;background:linear-gradient(135deg,rgba(255,255,255,.18),transparent 35%),linear-gradient(180deg,var(--lcdLight),var(--lcd));box-shadow:inset 0 0 26px var(--lcdShadow),inset 0 -10px 24px rgba(0,0,0,.10);padding:20px 22px 26px;overflow:hidden;min-width:0}
+.lcd::after{content:"";position:absolute;inset:0;pointer-events:none;background:repeating-linear-gradient(0deg,rgba(255,255,255,.055) 0,rgba(255,255,255,.055) 1px,transparent 1px,transparent 5px);mix-blend-mode:multiply;opacity:.45}
+.lcd-top{position:relative;z-index:1;display:flex;justify-content:space-between;align-items:center;color:rgba(20,28,24,.72);font-weight:800;letter-spacing:.08em;margin-bottom:18px}
+.lcd-status{display:flex;gap:12px;flex-wrap:wrap;font-size:.82rem}.lcd-unit{font-size:1.2rem}
+.display-row {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  justify-content: center;
+  align-items: flex-end;
+  gap: clamp(7px, 1.8vw, 16px);
+  min-height: 132px;
+  overflow: hidden;
+}
+
+.digit-container {
+  display: flex;
+  justify-content: center;
+  align-items: flex-end;
+  gap: clamp(7px, 1.8vw, 16px);
+  min-width: 0;
+}
+
+.digit {
+  --w: clamp(52px, 7vw, 78px);
+  --h: calc(var(--w) * 1.8);
+  --t: calc(var(--w) * 0.14);
+  position: relative;
+  width: var(--w);
+  height: var(--h);
+  filter: drop-shadow(0 2px 0 rgba(255,255,255,0.06));
+  flex: 0 0 auto;
+}
+
+.segment {
+  position: absolute;
+  background: var(--segOff);
+  transition: background 60ms ease;
+}
+
+.segment.on {
+  background: var(--seg);
+  box-shadow:
+    0 0 2px rgba(24,32,27,0.45),
+    inset 0 -2px 2px rgba(255,255,255,0.06);
+}
+
+.a, .d, .g {
+  left: var(--t);
+  width: calc(100% - var(--t) * 2);
+  height: var(--t);
+  clip-path: polygon(12% 0, 88% 0, 100% 50%, 88% 100%, 12% 100%, 0 50%);
+}
+
+.a { top: 0; }
+.g { top: calc(50% - var(--t) / 2); }
+.d { bottom: 0; }
+
+.b, .c, .e, .f {
+  width: var(--t);
+  height: calc(50% - var(--t) * 1.3);
+  clip-path: polygon(50% 0, 100% 12%, 100% 88%, 50% 100%, 0 88%, 0 12%);
+}
+
+.b { right: 0; top: calc(var(--t) * 0.65); }
+.c { right: 0; bottom: calc(var(--t) * 0.65); }
+.e { left: 0; bottom: calc(var(--t) * 0.65); }
+.f { left: 0; top: calc(var(--t) * 0.65); }
+
+.decimal {
+  width: calc(var(--t) * 1.2);
+  height: calc(var(--t) * 1.2);
+  border-radius: 50%;
+  background: var(--segOff);
+  position: absolute;
+  right: calc(var(--t) * -1.6);
+  bottom: 0;
+}
+
+.decimal.on { background: var(--seg); }
+
+.minus {
+  width: clamp(24px, 4vw, 38px);
+  height: clamp(8px, 1.2vw, 11px);
+  margin-right: -4px;
+  margin-bottom: clamp(54px, 9vw, 80px);
+  background: var(--segOff);
+  clip-path: polygon(12% 0, 88% 0, 100% 50%, 88% 100%, 12% 100%, 0 50%);
+}
+
+.minus.on { background: var(--seg); }
+.controls{display:grid;gap:18px;margin-top:24px}
+.card{background:rgba(255,255,255,.055);border:1px solid var(--line);border-radius:16px;padding:18px;min-width:0}
+.card-title{display:flex;justify-content:space-between;gap:14px;align-items:baseline;margin-bottom:12px}.card-title h2{font-size:1rem;margin:0}.card-title span{color:var(--muted);font-size:.88rem}
+label{display:block;color:#dfe5ee;font-weight:700;margin-bottom:9px}
+input,select{width:100%;min-width:0;padding:10px 11px;border:1px solid rgba(255,255,255,.12);background:#0e1014;color:var(--text);border-radius:12px;font-size:1rem;transition:border-color 140ms ease,box-shadow 140ms ease,background-color 140ms ease}input:hover:not(:disabled),select:hover:not(:disabled){border-color:rgba(255,255,255,.22)}input:focus,select:focus{outline:0;border-color:rgba(155,183,255,.72);box-shadow:0 0 0 3px rgba(155,183,255,.12)}
+input[type=range]{accent-color:var(--blue)}
+.slider-line{display:grid;grid-template-columns:minmax(0,1fr) minmax(240px,auto);gap:16px;align-items:center}.value-pill{min-width:0;text-align:right;font-variant-numeric:tabular-nums;font-size:1.02rem;background:#0d0f13;border:1px solid rgba(255,255,255,.09);border-radius:12px;padding:10px 12px;color:var(--blue);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.grid{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:14px}.channel-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:14px}
+.timeline-editor{display:grid;gap:14px}.timeline-section-heading{display:flex;align-items:flex-end;justify-content:space-between;gap:18px;padding:2px 2px 0}.timeline-section-heading h2{margin:0 0 5px;font-size:1.08rem}.timeline-section-heading p{margin:0;font-size:.9rem}.timeline-section-summary{color:#dfe5ee;font-size:.88rem;font-weight:700;white-space:nowrap;background:rgba(255,255,255,.06);border:1px solid var(--line);border-radius:999px;padding:8px 11px}
+.timeline-grid{display:grid;grid-template-columns:1fr;gap:16px}.timeline-actions{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12px}
+.timeline-card{--channel-accent:var(--blue);padding:0;overflow:hidden;border-color:color-mix(in srgb,var(--channel-accent) 24%,transparent);box-shadow:inset 4px 0 0 color-mix(in srgb,var(--channel-accent) 78%,transparent)}.timeline-card.channel-b{--channel-accent:var(--green)}
+.timeline-card-header{display:flex;align-items:center;justify-content:space-between;gap:18px;padding:17px 18px 15px;border-bottom:1px solid rgba(255,255,255,.075);background:linear-gradient(90deg,color-mix(in srgb,var(--channel-accent) 7%,transparent),transparent 42%)}.timeline-card.is-collapsed .timeline-card-header{border-bottom-color:transparent}.timeline-heading{display:flex;align-items:flex-start;gap:12px;min-width:0}.channel-token{display:inline-grid;place-items:center;flex:0 0 auto;min-width:34px;height:34px;border-radius:10px;color:#091018;background:var(--channel-accent);font-weight:900}.timeline-heading h2{font-size:1.03rem;margin:0 0 4px}.timeline-heading p{font-size:.86rem;margin:0;color:var(--muted)}.timeline-header-actions{display:flex;align-items:center;justify-content:flex-end;gap:10px;flex-wrap:wrap}.channel-summary{color:var(--muted);font-size:.84rem;white-space:nowrap}.add-keyframe-button{background:color-mix(in srgb,var(--channel-accent) 90%,white 10%);padding:10px 13px;min-height:40px}.collapse-toggle{display:inline-flex;align-items:center;gap:8px;min-height:40px;padding:9px 12px}.collapse-chevron{font-size:.8rem;transition:transform 180ms ease}.collapse-toggle[aria-expanded="false"] .collapse-chevron{transform:rotate(-90deg)}.timeline-card-body{min-width:0}.timeline-card-body[hidden]{display:none}
+.table-wrap{overflow:visible;background:rgba(0,0,0,.14)}.timeline-table{width:100%;border-collapse:collapse;table-layout:fixed}.timeline-table th,.timeline-table td{padding:9px 8px;border-bottom:1px solid rgba(255,255,255,.06);text-align:left;vertical-align:middle}.timeline-table th{position:sticky;top:0;z-index:2;color:var(--muted);font-size:.75rem;font-weight:800;letter-spacing:.045em;text-transform:uppercase;background:#202329}.timeline-table tbody tr{transition:background-color 140ms ease}.timeline-table tbody tr:hover{background:color-mix(in srgb,var(--channel-accent) 5%,transparent)}.timeline-table tbody tr:last-child td{border-bottom:0}.timeline-table td:first-child,.timeline-table th:first-child{text-align:center}.timeline-table input,.timeline-table select{height:40px;padding:8px 10px;font-size:.92rem}.timeline-table select{padding-right:28px}.timeline-table input:disabled,.timeline-table select:disabled{opacity:.42}.keyframe-number{display:inline-grid;place-items:center;width:29px;height:29px;border-radius:999px;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.08);font-weight:800;font-variant-numeric:tabular-nums}.not-applicable{display:inline-flex;align-items:center;min-height:40px;color:#78818e;font-size:.85rem}.trip-cell{text-align:center!important}.trip-toggle{position:relative;display:inline-flex;align-items:center;justify-content:center;width:42px;height:24px;cursor:pointer}.trip-toggle input{position:absolute;opacity:0;width:1px;height:1px}.trip-toggle-track{position:absolute;inset:0;border-radius:999px;background:#0d0f13;border:1px solid rgba(255,255,255,.15);transition:background 150ms ease,border-color 150ms ease}.trip-toggle-track::after{content:"";position:absolute;top:3px;left:3px;width:16px;height:16px;border-radius:50%;background:#89919d;transition:transform 150ms ease,background 150ms ease}.trip-toggle input:checked+.trip-toggle-track{background:rgba(255,141,141,.22);border-color:rgba(255,141,141,.75)}.trip-toggle input:checked+.trip-toggle-track::after{transform:translateX(18px);background:#ff9a9a}.trip-toggle input:focus-visible+.trip-toggle-track{box-shadow:0 0 0 3px rgba(155,183,255,.22)}.remove-keyframe{min-height:38px;padding:8px 10px;color:#ffc1c1;background:rgba(255,176,176,.07);border:1px solid rgba(255,176,176,.18)}.remove-keyframe:hover:not(:disabled){background:rgba(255,176,176,.15);border-color:rgba(255,176,176,.35)}.timeline-footnote{display:flex;align-items:center;gap:8px;padding:10px 18px 13px;color:var(--muted);font-size:.82rem;border-top:1px solid rgba(255,255,255,.04)}.timeline-footnote::before{content:"i";display:inline-grid;place-items:center;width:18px;height:18px;border-radius:50%;background:rgba(255,255,255,.08);color:#dce3ec;font-size:.72rem;font-weight:900}
+.progress{height:10px;border-radius:999px;background:rgba(255,255,255,.09);overflow:hidden;margin-top:14px}.progress-bar{height:100%;width:0;background:var(--green);border-radius:999px;transition:width 80ms linear}
+.hint{margin:13px 0 0;color:var(--muted);font-size:.92rem}.graph-shell{background:#0c0e12;border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:10px}
+canvas{display:block;width:100%;height:350px;border-radius:10px;background:linear-gradient(180deg,rgba(255,255,255,.03),rgba(255,255,255,.01))}
+.graph-range-controls{margin-bottom:14px;padding:14px;border-radius:12px;background:rgba(255,255,255,.035);border:1px solid rgba(255,255,255,.07)}.graph-range-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}.graph-range-actions{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-top:10px}.graph-range-actions .hint{margin:0}.graph-range-controls input.invalid{border-color:rgba(255,176,176,.9);box-shadow:0 0 0 2px rgba(255,176,176,.12)}.graph-title-actions{display:flex;align-items:center;justify-content:flex-end;gap:10px;flex-wrap:wrap}.graph-edit-toggle[aria-pressed="true"]{color:#071018;background:var(--yellow);border-color:transparent}.graph-edit-toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:0 0 12px;padding:10px 12px;border-radius:12px;background:rgba(255,255,255,.035);border:1px solid rgba(255,255,255,.07)}.graph-edit-toolbar strong{color:#e9edf4}.graph-edit-status{color:var(--muted);font-size:.88rem;line-height:1.35}.graph-shell.editing{border-color:rgba(255,210,138,.44);box-shadow:0 0 0 3px rgba(255,210,138,.07)}#graphCanvas{touch-action:none}.legend,.stats{display:flex;gap:14px;flex-wrap:wrap;color:var(--muted);font-size:.9rem;margin-top:10px}.swatch{display:inline-block;width:14px;height:3px;border-radius:99px;margin-right:6px;vertical-align:middle}
+.presentation-exit{display:none;position:fixed;top:16px;right:16px;z-index:1000;color:var(--text);background:rgba(6,7,10,.88);border:1px solid rgba(255,255,255,.16)}
+body.presentation-mode{padding:16px;background:#08090b}body.presentation-mode .app{width:min(1440px,100%);background:transparent;border:0;box-shadow:none;padding:0}
+body.presentation-mode .header,body.presentation-mode .controls>.card:not(.graph-card){display:none!important}body.presentation-mode .meter{background:transparent;border:0;box-shadow:none;padding:0}body.presentation-mode .presentation-exit{display:inline-flex}body.presentation-mode .lcd{min-height:270px}body.presentation-mode .digit{--w:clamp(52px,7vw,78px)}body.presentation-mode canvas{height:390px}
+.table-wrap{max-width:100%}.card-title{min-width:0}.card-title span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+
+body.presentation-mode .scrubber-card,
+body.presentation-mode .playback-card {
+  display: none !important;
+}
+
+/* Presentation mode clean-up: show only readouts and graph */
+body.presentation-mode .controls > .card:not(.graph-card),
+body.presentation-mode .timeline-editor,
+body.presentation-mode .timeline-grid,
+body.presentation-mode .timeline-actions,
+body.presentation-mode .table-wrap,
+body.presentation-mode #rangeHint,
+body.presentation-mode #settingsStatus,
+body.presentation-mode .progress,
+body.presentation-mode .slider-line,
+body.presentation-mode .controls > .card:has(#timeSlider) {
+  display: none !important;
+}
+
+body.presentation-mode .controls {
+  margin-top: 18px;
+}
+
+body.presentation-mode .graph-card {
+  display: block !important;
+}
+
+body.presentation-mode .graph-range-controls,
+body.presentation-mode .graph-edit-toolbar,
+body.presentation-mode .graph-edit-toggle {
+  display: none !important;
+}
+
+@media(max-width:1280px){.readouts{grid-template-columns:1fr}.slider-line{grid-template-columns:1fr}.value-pill{text-align:left}.grid,.channel-grid,.graph-range-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:980px){
+  .timeline-section-heading,.timeline-card-header{align-items:flex-start;flex-direction:column}.timeline-header-actions{width:100%;justify-content:space-between}.graph-card>.card-title{align-items:flex-start;flex-direction:column}.graph-title-actions{width:100%;justify-content:space-between}.graph-edit-toolbar{align-items:flex-start;flex-direction:column}.timeline-table thead{display:none}.timeline-table,.timeline-table tbody{display:block}.timeline-table tbody{display:grid;gap:10px;padding:12px}.timeline-table tbody tr{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:11px 12px;padding:13px;border:1px solid rgba(255,255,255,.075);border-radius:13px;background:rgba(0,0,0,.16)}.timeline-table td{display:block;padding:0;border:0!important;min-width:0}.timeline-table td::before{content:attr(data-label);display:block;margin-bottom:6px;color:var(--muted);font-size:.69rem;font-weight:800;letter-spacing:.05em;text-transform:uppercase}.timeline-table td:first-child{grid-column:1/-1;text-align:left}.timeline-table td:first-child::before{display:none}.timeline-table td.actions-cell,.timeline-table td.trip-cell{align-self:end}.timeline-table td.trip-cell{text-align:left!important}.trip-toggle{margin-top:7px}.remove-keyframe{width:100%}.timeline-footnote{padding-left:14px;padding-right:14px}
+}
+@media(max-width:640px){body{padding:12px}.app{padding:16px}.meter{padding:16px}.grid,.channel-grid,.graph-range-grid{grid-template-columns:1fr}.slider-line{grid-template-columns:1fr}.value-pill{text-align:left;min-width:0}.lcd{min-height:180px}.digit{--w:44px}.timeline-table tbody tr{grid-template-columns:1fr}.timeline-card-header{padding:15px}.timeline-header-actions{align-items:stretch}.channel-summary{align-self:center}.add-keyframe-button{flex:1}.timeline-section-summary{white-space:normal}.timeline-heading p{font-size:.82rem}}
+
+
+/* Final UX refinement */
+:root{--surface:#1a1d22;--surface-2:#20242a;--focus:rgba(155,183,255,.34);--ease:cubic-bezier(.2,.75,.25,1)}
+body{padding:20px}
+.app{padding:24px;border-radius:24px}
+.header{align-items:center;margin-bottom:18px}
+.header .buttons{justify-content:flex-end}
+.header button{min-height:38px;padding:9px 12px;font-size:.88rem}
+.subtitle{max-width:720px;font-size:.94rem}
+.meter{padding:22px}
+.controls{gap:16px;margin-top:18px}
+.card{border-radius:15px}
+.section-header,.preview-header{display:flex;align-items:flex-start;justify-content:space-between;gap:18px}
+.section-copy h2,.preview-header h2{margin:0 0 4px;font-size:1.04rem}
+.section-copy p,.preview-header p{margin:0;font-size:.87rem;color:var(--muted)}
+.compact-button{min-height:38px;padding:9px 12px}
+
+/* Readouts */
+.bezel{position:relative;transition:transform 180ms var(--ease),box-shadow 180ms var(--ease)}
+.bezel::before{content:"";position:absolute;inset:8px auto 8px 8px;width:3px;border-radius:999px;opacity:.72}
+.readout-a::before{background:var(--blue)}.readout-b::before{background:var(--green)}
+.bezel:hover{transform:translateY(-1px);box-shadow:inset 0 0 12px rgba(255,255,255,.08),0 10px 22px rgba(0,0,0,.5)}
+
+/* Unified preview controls */
+.preview-card{padding:16px 18px;background:linear-gradient(120deg,rgba(155,183,255,.055),rgba(255,255,255,.035) 52%)}
+.preview-header{align-items:center;margin-bottom:13px}
+.preview-actions{justify-content:flex-end}
+.preview-actions button{min-height:40px;padding:9px 13px}
+.play-button{min-width:82px;position:relative;overflow:hidden}
+.play-button::after{content:"";position:absolute;inset:0;border-radius:inherit;box-shadow:inset 0 0 0 0 rgba(255,255,255,.28);transition:box-shadow 180ms ease}
+.preview-card.is-playing .play-button{background:var(--yellow);box-shadow:0 0 0 3px rgba(255,210,138,.1)}
+.preview-card.is-playing .play-button::after{animation:softPulse 1.4s ease-in-out infinite}
+.preview-card.is-paused .play-button{background:var(--green)}
+.preview-card .slider-line{grid-template-columns:minmax(0,1fr) minmax(230px,auto);gap:14px}
+.preview-card .value-pill{font-size:.94rem;padding:9px 11px}
+.preview-card .progress{height:5px;margin-top:12px}
+.progress-bar{transition:width 80ms linear}
+.preview-footer{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-top:10px;color:var(--muted);font-size:.79rem}
+.preview-range{color:var(--muted)}
+.save-status{display:inline-flex;align-items:center;gap:6px;color:#cbd3df}
+.save-status::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--green);box-shadow:0 0 0 3px rgba(168,240,189,.08)}
+.save-status.is-saving::before{background:var(--yellow);animation:statusPulse .8s ease-in-out infinite}
+.save-status.is-error::before{background:var(--danger)}
+.shortcut-hint{opacity:.74}
+
+/* Graph first, details second */
+.graph-card{padding:17px}
+.graph-header{align-items:center;margin-bottom:12px}
+.graph-actions{justify-content:flex-end}
+.inline-disclosure,.settings-disclosure{border:1px solid rgba(255,255,255,.075);border-radius:13px;background:rgba(255,255,255,.025);overflow:hidden}
+.inline-disclosure{margin-bottom:12px}
+.inline-disclosure summary,.settings-disclosure summary{list-style:none;display:flex;align-items:center;justify-content:space-between;gap:14px;padding:12px 14px;cursor:pointer;user-select:none;transition:background-color 150ms ease}
+.inline-disclosure summary::-webkit-details-marker,.settings-disclosure summary::-webkit-details-marker{display:none}
+.inline-disclosure summary:hover,.settings-disclosure summary:hover{background:rgba(255,255,255,.035)}
+.inline-disclosure summary::after,.settings-disclosure summary::after{content:"⌄";font-size:1.15rem;color:var(--muted);transition:transform 200ms var(--ease)}
+.inline-disclosure[open] summary::after,.settings-disclosure[open] summary::after{transform:rotate(180deg)}
+.disclosure-copy{display:grid;gap:2px;min-width:0}.disclosure-copy strong{font-size:.92rem}.disclosure-copy small{color:var(--muted);font-size:.78rem;line-height:1.3}
+.disclosure-state{margin-left:auto;color:var(--muted);font-size:.78rem;background:rgba(255,255,255,.055);border:1px solid rgba(255,255,255,.07);border-radius:999px;padding:5px 8px;white-space:nowrap}
+.axis-disclosure .graph-range-controls{margin:0;border:0;border-top:1px solid rgba(255,255,255,.065);border-radius:0;background:rgba(0,0,0,.09);animation:revealPanel 180ms var(--ease)}
+.graph-edit-toolbar{display:none;opacity:0;transform:translateY(-4px);margin-bottom:10px}
+.graph-edit-toolbar.is-active{display:flex;animation:toolbarIn 180ms var(--ease) forwards}
+.graph-edit-toggle{min-width:94px}
+.graph-shell{transition:border-color 180ms ease,box-shadow 180ms ease,transform 180ms ease}
+.graph-shell.editing{transform:translateY(-1px)}
+.legend{gap:12px;font-size:.82rem}.stats{font-size:.8rem;gap:10px}
+
+/* Keyframes */
+.timeline-section-heading{align-items:center}
+.timeline-section-heading h2{font-size:1.04rem}
+.timeline-card{transition:border-color 180ms ease,box-shadow 180ms ease,transform 180ms ease}
+.timeline-card:hover{border-color:color-mix(in srgb,var(--channel-accent) 36%,transparent)}
+.timeline-card-header{padding:15px 17px;cursor:default}
+.timeline-card-body{display:grid;grid-template-rows:1fr;opacity:1;transition:grid-template-rows 260ms var(--ease),opacity 180ms ease}
+.timeline-card-inner{min-height:0;overflow:hidden}
+.timeline-card.is-collapsed .timeline-card-body{grid-template-rows:0fr;opacity:0;pointer-events:none}
+.timeline-card.is-collapsed{box-shadow:inset 4px 0 0 color-mix(in srgb,var(--channel-accent) 55%,transparent)}
+.collapse-toggle{min-width:94px}
+.timeline-table tbody tr.just-added{animation:keyframeAdded 900ms var(--ease)}
+.timeline-table tbody tr.graph-updated{animation:keyframeUpdated 800ms var(--ease)}
+.remove-keyframe{transition:opacity 140ms ease,background-color 140ms ease,transform 140ms ease}
+.timeline-table tbody tr:not(:hover) .remove-keyframe{opacity:.68}
+.timeline-table tbody tr:hover .remove-keyframe{opacity:1}
+
+/* Progressive disclosure for less-used controls */
+.settings-disclosure{background:rgba(255,255,255,.04)}
+.settings-disclosure>summary{padding:15px 17px}
+.settings-content{display:grid;gap:14px;padding:0 14px 14px;animation:revealPanel 200ms var(--ease)}
+.channel-settings-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+.settings-group{min-width:0;padding:15px;border-radius:13px;border:1px solid rgba(255,255,255,.075);background:rgba(0,0,0,.14)}
+.channel-a-settings{box-shadow:inset 3px 0 0 rgba(155,183,255,.78)}
+.channel-b-settings{box-shadow:inset 3px 0 0 rgba(168,240,189,.78)}
+.settings-group .card-title{margin-bottom:12px}
+.shared-settings .grid{grid-template-columns:repeat(4,minmax(0,1fr))}
+.settings-storage{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:12px 14px;border-radius:12px;background:rgba(255,255,255,.025);border:1px solid rgba(255,255,255,.065)}
+.settings-storage p{margin:3px 0 0;font-size:.8rem}.danger-outline{color:var(--danger)!important;border-color:rgba(255,176,176,.25)!important;background:rgba(255,176,176,.05)!important}
+
+/* Feedback toast */
+.status-toast{position:fixed;right:20px;bottom:20px;z-index:1200;max-width:min(380px,calc(100vw - 32px));padding:11px 14px;border-radius:12px;color:#f3f5f8;background:rgba(18,21,26,.96);border:1px solid rgba(255,255,255,.13);box-shadow:0 16px 44px rgba(0,0,0,.38);font-size:.86rem;line-height:1.35;opacity:0;transform:translateY(10px) scale(.98);pointer-events:none;transition:opacity 180ms ease,transform 180ms var(--ease)}
+.status-toast.is-visible{opacity:1;transform:translateY(0) scale(1)}
+
+@keyframes softPulse{0%,100%{box-shadow:inset 0 0 0 0 rgba(255,255,255,.18)}50%{box-shadow:inset 0 0 0 2px rgba(255,255,255,.18)}}
+@keyframes statusPulse{0%,100%{opacity:.45;transform:scale(.82)}50%{opacity:1;transform:scale(1)}}
+@keyframes revealPanel{from{opacity:0;transform:translateY(-5px)}to{opacity:1;transform:translateY(0)}}
+@keyframes toolbarIn{to{opacity:1;transform:translateY(0)}}
+@keyframes keyframeAdded{0%{background:color-mix(in srgb,var(--channel-accent) 24%,transparent)}100%{background:transparent}}
+@keyframes keyframeUpdated{0%,35%{box-shadow:inset 0 0 0 2px color-mix(in srgb,var(--channel-accent) 65%,transparent);background:color-mix(in srgb,var(--channel-accent) 12%,transparent)}100%{box-shadow:none;background:transparent}}
+
+body.presentation-mode .preview-card,body.presentation-mode .settings-disclosure{display:none!important}
+body.presentation-mode .graph-header .graph-actions,body.presentation-mode .axis-disclosure{display:none!important}
+
+@media(max-width:980px){
+  .section-header,.preview-header{align-items:flex-start;flex-direction:column}.preview-actions,.graph-actions{width:100%;justify-content:flex-start}.channel-settings-grid{grid-template-columns:1fr}.shared-settings .grid{grid-template-columns:repeat(2,minmax(0,1fr))}.shortcut-hint{display:none}
+}
+@media(max-width:640px){
+  body{padding:10px}.app{padding:13px}.meter{padding:12px}.preview-card,.graph-card{padding:14px}.preview-actions button{flex:1}.preview-card .slider-line{grid-template-columns:1fr}.preview-footer{align-items:flex-start;flex-direction:column}.graph-actions button{flex:1}.shared-settings .grid{grid-template-columns:1fr}.settings-storage{align-items:flex-start;flex-direction:column}.settings-storage button{width:100%}.disclosure-copy small{display:none}.status-toast{right:12px;bottom:12px}
+}
+@media(prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important;animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}}
+
+
+/* Final containment and disclosure refinement */
+/* Readouts are intentionally static – no accent rail or hover movement. */
+.bezel{position:relative;transition:none}
+.bezel::before{content:none!important;display:none!important}
+.bezel:hover{transform:none;box-shadow:inset 0 0 12px rgba(255,255,255,.08),0 8px 18px rgba(0,0,0,.45)}
+
+/* Keep the timeline table, including its heading row, visibly inside the card. */
+.timeline-card-inner{padding:0 14px 13px}
+.timeline-table-wrap{overflow:hidden;border:1px solid rgba(255,255,255,.075);border-radius:12px;background:rgba(0,0,0,.14)}
+.timeline-table th{position:static}
+.timeline-footnote{margin-top:10px;padding:0 2px;border-top:0}
+
+/* One restrained disclosure language across timelines and details panels. */
+.disclosure-toggle{display:inline-grid;place-items:center;flex:0 0 auto;width:34px;height:34px;min-width:34px;min-height:34px;padding:0;border:1px solid transparent;border-radius:9px;background:transparent;color:var(--muted);box-shadow:none;filter:none;transition:background-color 140ms ease,border-color 140ms ease,color 140ms ease}
+.disclosure-toggle:hover:not(:disabled){transform:none;filter:none;background:rgba(255,255,255,.055);border-color:rgba(255,255,255,.075);color:var(--text)}
+.disclosure-toggle:active:not(:disabled){transform:none;background:rgba(255,255,255,.075)}
+.disclosure-toggle:focus-visible{box-shadow:0 0 0 3px var(--focus)}
+.disclosure-chevron{display:block;font-size:1.45rem;font-family:Arial,Helvetica,sans-serif;font-weight:400;line-height:1;transform:rotate(90deg);transition:transform 180ms var(--ease)}
+.disclosure-toggle[aria-expanded="false"] .disclosure-chevron{transform:rotate(0deg)}
+.timeline-header-actions{flex-wrap:nowrap}
+
+.inline-disclosure summary::after,.settings-disclosure summary::after{content:"›";display:inline-block;flex:0 0 auto;font-size:1.45rem;font-family:Arial,Helvetica,sans-serif;font-weight:400;line-height:1;color:var(--muted);transform:rotate(0deg);transition:transform 180ms var(--ease),color 140ms ease}
+.inline-disclosure[open] summary::after,.settings-disclosure[open] summary::after{transform:rotate(90deg)}
+.inline-disclosure summary:hover::after,.settings-disclosure summary:hover::after{color:var(--text)}
+.settings-disclosure .disclosure-state{display:none}
+
+@media(max-width:900px){
+  .timeline-card-inner{padding:0 12px 12px}
+  .timeline-table-wrap{border:0;background:transparent;overflow:visible}
+  .timeline-table tbody{padding:12px 0 0}
+  .timeline-header-actions{width:100%;justify-content:flex-end;flex-wrap:wrap}
+  .channel-summary{margin-right:auto}
+}
+
+/* Graph curve editing */
+.graph-edit-toolbar.is-active{border-color:rgba(255,210,138,.25);background:rgba(255,210,138,.045)}
+.graph-edit-toolbar.is-active strong{color:var(--yellow)}
+.graph-shell.curve-selected{box-shadow:0 0 0 3px rgba(255,210,138,.08)}
+
+
+/* Multi-channel extension */
+:root{
+  --channel-a:#9bb7ff;
+  --channel-b:#a8f0bd;
+  --channel-c:#ffd28a;
+  --channel-d:#d4adff;
+}
+.header-tools{display:flex;align-items:center;justify-content:flex-end;gap:10px;flex-wrap:wrap}
+.channel-count-control{display:flex;align-items:center;gap:8px;padding:5px 6px 5px 11px;border:1px solid rgba(255,255,255,.09);border-radius:12px;background:rgba(255,255,255,.045)}
+.channel-count-control label{margin:0;color:var(--muted);font-size:.78rem;text-transform:uppercase;letter-spacing:.06em}
+.channel-count-control select{width:auto;min-width:116px;min-height:34px;padding:7px 30px 7px 10px;border-radius:9px;font-size:.88rem}
+.readouts.count-1{grid-template-columns:minmax(0,760px);justify-content:center}
+.readouts.count-2,.readouts.count-3,.readouts.count-4{grid-template-columns:repeat(2,minmax(0,1fr))}
+.readouts.count-3 .bezel:last-child{grid-column:1/-1;width:calc(50% - 9px);justify-self:center}
+.graph-range-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.graph-range-channel{--channel-accent:var(--blue);display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;padding:11px;border:1px solid rgba(255,255,255,.065);border-radius:11px;background:rgba(0,0,0,.12);box-shadow:inset 3px 0 0 color-mix(in srgb,var(--channel-accent) 76%,transparent)}
+.graph-range-channel-title{grid-column:1/-1;display:flex;align-items:center;justify-content:space-between;gap:10px;color:#e6ebf2;font-size:.83rem;font-weight:800}
+.graph-range-channel-title span:last-child{color:var(--muted);font-weight:600}
+.graph-edit-toolbar{flex-wrap:wrap}
+.graph-edit-channel-control{display:flex;align-items:center;gap:8px;margin-left:auto}
+.graph-edit-channel-control label{margin:0;color:var(--muted);font-size:.8rem}
+.graph-edit-channel-control select{width:auto;min-width:150px;padding:7px 30px 7px 9px;font-size:.85rem}
+.channel-settings-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+.channel-settings{--channel-accent:var(--blue);box-shadow:inset 3px 0 0 color-mix(in srgb,var(--channel-accent) 78%,transparent)}
+.channel-settings .channel-grid{grid-template-columns:repeat(3,minmax(0,1fr))}
+.timeline-card{box-shadow:inset 4px 0 0 color-mix(in srgb,var(--channel-accent) 78%,transparent)}
+.legend .zero-key{display:inline-flex;align-items:center;gap:5px}
+.legend .zero-key::before{content:"";display:inline-block;width:16px;border-top:1px dashed rgba(255,255,255,.55)}
+.stats .channel-range-stat{padding-right:9px;border-right:1px solid rgba(255,255,255,.08)}
+.stats .channel-range-stat:last-child{border-right:0}
+@media(max-width:1100px){
+  .channel-settings .channel-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+@media(max-width:820px){
+  .readouts.count-2,.readouts.count-3,.readouts.count-4{grid-template-columns:1fr}
+  .readouts.count-3 .bezel:last-child{grid-column:auto;width:auto;justify-self:stretch}
+  .graph-range-grid,.channel-settings-grid{grid-template-columns:1fr}
+  .header{align-items:flex-start;flex-direction:column}
+  .header-tools{width:100%;justify-content:flex-start}
+  .graph-edit-channel-control{margin-left:0}
+}
+@media(max-width:520px){
+  .channel-count-control{width:100%;justify-content:space-between}
+  .channel-count-control select{flex:1}
+  .graph-range-channel,.channel-settings .channel-grid{grid-template-columns:1fr}
+  .graph-range-channel-title{grid-column:auto}
+}
+</style>
+</head>
+<body>
+<button class="presentation-exit" id="presentationExit" type="button">Exit presentation mode</button>
+<main class="app">
+  <section class="header">
+    <div>
+      <h1>Multi-channel Timeline Display Simulator</h1>
+      <p class="subtitle">Build, preview and compare up to four independent meter signals across a shared timeline.</p>
+    </div>
+    <div class="header-tools">
+      <div class="channel-count-control">
+        <label for="channelCountInput">Channels</label>
+        <select id="channelCountInput" aria-label="Number of active channels">
+          <option value="1">1 channel</option>
+          <option value="2" selected>2 channels</option>
+          <option value="3">3 channels</option>
+          <option value="4">4 channels</option>
+        </select>
+      </div>
+      <div class="buttons">
+        <button class="secondary" id="presentationToggle" title="Show only the readouts and graph" type="button">Present</button>
+        <button class="secondary" id="exportSettingsButton" title="Export all settings as JSON" type="button">Export</button>
+        <button class="secondary" id="importSettingsButton" title="Import settings from a JSON file" type="button">Import</button>
+        <input accept="application/json,.json" hidden id="importSettingsFile" type="file">
+      </div>
+    </div>
+  </section>
+
+  <section class="meter">
+    <div class="readouts count-2" id="readouts"></div>
+
+    <div class="controls">
+      <section aria-labelledby="previewHeading" class="card preview-card">
+        <div class="preview-header">
+          <div class="section-copy">
+            <h2 id="previewHeading">Preview timeline</h2>
+            <p>Scrub to inspect a moment, or play the complete sequence.</p>
+          </div>
+          <div class="buttons preview-actions">
+            <button class="play-button" id="playButton" title="Play or pause the timeline (Space)" type="button">Play</button>
+            <button class="secondary" id="stopButton" title="Stop playback" type="button">Stop</button>
+            <button class="secondary" id="resetExampleButton" title="Restore the example timelines and values" type="button">Restore example</button>
+          </div>
+        </div>
+        <div class="slider-line">
+          <input id="timeSlider" max="5" min="0" step="0.01" type="range" value="0">
+          <div class="value-pill" id="readoutPill">0.00 s</div>
+        </div>
+        <div class="progress"><div class="progress-bar" id="progressBar"></div></div>
+        <div class="preview-footer">
+          <p class="preview-range" id="rangeHint">0.00–5.00 s</p>
+          <p aria-live="polite" class="save-status" id="settingsStatus" role="status">Saved locally</p>
+          <span class="shortcut-hint">Space: play/pause · P: present</span>
+        </div>
+      </section>
+
+      <div class="card graph-card">
+        <div class="section-header graph-header">
+          <div class="section-copy">
+            <h2>Timeline graph</h2>
+            <p>Each channel has its own vertical scale. Click to scrub, or edit one channel at a time.</p>
+          </div>
+          <div class="buttons graph-actions">
+            <button class="secondary compact-button" id="clearGraphButton" title="Remove recorded playback samples from the graph" type="button">Clear trace</button>
+            <button aria-pressed="false" class="graph-edit-toggle secondary" id="graphEditToggle" title="Drag keyframe points and curve handles" type="button">Edit graph</button>
+          </div>
+        </div>
+
+        <details class="inline-disclosure axis-disclosure">
+          <summary>
+            <span class="disclosure-copy"><strong>Axis ranges</strong><small>Automatic by default; each channel can use an independent fixed range.</small></span>
+            <span class="disclosure-state" id="axisRangeSummary">Automatic</span>
+          </summary>
+          <div class="graph-range-controls">
+            <div class="graph-range-grid" id="graphRangeGrid"></div>
+            <div class="graph-range-actions">
+              <p class="hint">Set both limits for a channel, or leave both blank to use its full timeline range.</p>
+              <button class="secondary" id="resetGraphRangesButton" type="button">Auto-scale axes</button>
+            </div>
+          </div>
+        </details>
+
+        <div aria-live="polite" class="graph-edit-toolbar" id="graphEditToolbar">
+          <strong id="graphEditModeLabel">Graph editing</strong>
+          <span class="graph-edit-status" id="graphEditStatus">Drag a keyframe, or select a line segment to shape its transition.</span>
+          <div class="graph-edit-channel-control">
+            <label for="graphEditChannelSelect">Edit channel</label>
+            <select id="graphEditChannelSelect"></select>
+          </div>
+        </div>
+
+        <div class="graph-shell" id="graphShell"><canvas aria-label="Interactive multi-channel timeline graph" height="350" id="graphCanvas" width="1200"></canvas></div>
+        <div class="legend" id="graphLegend"></div>
+        <div class="stats" id="graphStats"></div>
+      </div>
+
+      <section aria-labelledby="timelineEditorHeading" class="timeline-editor">
+        <div class="timeline-section-heading">
+          <div>
+            <h2 id="timelineEditorHeading">Keyframes</h2>
+            <p>Use the graph for quick shaping, or open a channel for precise timing and behaviour.</p>
+          </div>
+          <span class="timeline-section-summary" id="timelineSummary">0 segments</span>
+        </div>
+        <div class="timeline-grid" id="timelineGrid"></div>
+      </section>
+
+      <details class="settings-disclosure">
+        <summary><span class="disclosure-copy"><strong>Display and playback settings</strong><small>Labels, units, display precision, noise and playback behaviour.</small></span></summary>
+        <div class="settings-content">
+          <div class="channel-settings-grid" id="channelSettingsGrid"></div>
+          <div class="settings-group shared-settings">
+            <div class="card-title"><h2>Playback and signal behaviour</h2><span>All active channels</span></div>
+            <div class="grid">
+              <div><label for="sampleRateInput">Update rate, Hz</label><input id="sampleRateInput" max="60" min="1" type="number" value="20"></div>
+              <div><label for="settleBiasInput">Noise settling</label><input id="settleBiasInput" max="5" min="0.1" step="0.1" type="number" value="1"></div>
+              <div><label for="spikeChanceInput">Spike probability</label><input id="spikeChanceInput" max="1" min="0" step="0.01" type="number" value="0.08"></div>
+              <div><label for="timelineScaleInput">Playback time scale</label><input id="timelineScaleInput" max="10" min="0.1" step="0.1" type="number" value="1"></div>
+              <div><label for="loopSelect">Playback</label><select id="loopSelect"><option value="once">Play once</option><option value="loop">Loop</option></select></div>
+              <div><label for="contrastSelect">LCD contrast</label><select id="contrastSelect"><option value="normal">Normal</option><option value="high">High</option><option value="faded">Faded</option></select></div>
+            </div>
+          </div>
+          <div class="settings-storage">
+            <div><strong>Browser storage</strong><p>All four channels are retained, even when fewer are visible.</p></div>
+            <button class="secondary danger-outline" id="clearSavedButton" title="Remove saved settings from this browser without changing the current view" type="button">Forget saved settings</button>
+          </div>
+        </div>
+      </details>
+    </div>
+  </section>
+</main>
+<div aria-atomic="true" aria-live="polite" class="status-toast" id="statusToast" role="status"></div>
+<script>
+(() => {
+  "use strict";
+
+  const STORAGE_KEY = "multiChannelTimeline.v5";
+  const LEGACY_STORAGE_KEY = "dualIndependentTimeline.v1";
+  const CHANNEL_IDS = ["A", "B", "C", "D"];
+  const CHANNEL_STYLE = {
+    A: { colour: "#9bb7ff", css: "var(--channel-a)", dash: [6, 4] },
+    B: { colour: "#a8f0bd", css: "var(--channel-b)", dash: [2, 4] },
+    C: { colour: "#ffd28a", css: "var(--channel-c)", dash: [8, 3, 2, 3] },
+    D: { colour: "#d4adff", css: "var(--channel-d)", dash: [1, 3] }
+  };
+  const segmentMap = {"0":["a","b","c","d","e","f"],"1":["b","c"],"2":["a","b","g","e","d"],"3":["a","b","c","d","g"],"4":["f","g","b","c"],"5":["a","f","g","c","d"],"6":["a","f","e","d","c","g"],"7":["a","b","c"],"8":["a","b","c","d","e","f","g"],"9":["a","b","c","d","f","g"]," ":[]};
+  const easingOptions = [["linear","Linear"],["easeIn","Ease in"],["easeOut","Ease out"],["easeInOut","Ease in/out"],["overshoot","Overshoot and settle"],["custom","Custom curve"],["stepped","Stepped meter update"],["hold","Hold then jump"]];
+  const jitterOptions = [["none","None"],["constant","Constant noise"],["settle","Settles over time"],["spike","Occasional spikes"]];
+  const bezierPresetMap = {
+    linear:[1/3,1/3,2/3,2/3],
+    easeIn:[1/3,0,2/3,0],
+    easeOut:[1/3,1,2/3,1],
+    easeInOut:[1/3,0,2/3,1],
+    overshoot:[1/3,1.5671933333,2/3,1]
+  };
+  const BEZIER_HANDLE_HIT_RADIUS = 24;
+  const EDIT_RANGE_PADDING_PER_SIDE = 0.125;
+
+  const $ = id => document.getElementById(id);
+  const el = {
+    presentationExit: $("presentationExit"),
+    presentationToggle: $("presentationToggle"),
+    exportSettingsButton: $("exportSettingsButton"),
+    importSettingsButton: $("importSettingsButton"),
+    importSettingsFile: $("importSettingsFile"),
+    channelCountInput: $("channelCountInput"),
+    readouts: $("readouts"),
+    timeSlider: $("timeSlider"),
+    readoutPill: $("readoutPill"),
+    rangeHint: $("rangeHint"),
+    playButton: $("playButton"),
+    stopButton: $("stopButton"),
+    resetExampleButton: $("resetExampleButton"),
+    clearGraphButton: $("clearGraphButton"),
+    clearSavedButton: $("clearSavedButton"),
+    progressBar: $("progressBar"),
+    settingsStatus: $("settingsStatus"),
+    graphCanvas: $("graphCanvas"),
+    graphShell: $("graphShell"),
+    graphEditToggle: $("graphEditToggle"),
+    graphEditToolbar: $("graphEditToolbar"),
+    graphEditStatus: $("graphEditStatus"),
+    graphEditChannelSelect: $("graphEditChannelSelect"),
+    graphRangeGrid: $("graphRangeGrid"),
+    resetGraphRangesButton: $("resetGraphRangesButton"),
+    axisRangeSummary: $("axisRangeSummary"),
+    graphLegend: $("graphLegend"),
+    graphStats: $("graphStats"),
+    timelineGrid: $("timelineGrid"),
+    timelineSummary: $("timelineSummary"),
+    channelSettingsGrid: $("channelSettingsGrid"),
+    sampleRateInput: $("sampleRateInput"),
+    settleBiasInput: $("settleBiasInput"),
+    spikeChanceInput: $("spikeChanceInput"),
+    timelineScaleInput: $("timelineScaleInput"),
+    loopSelect: $("loopSelect"),
+    contrastSelect: $("contrastSelect"),
+    statusToast: $("statusToast"),
+    previewCard: document.querySelector(".preview-card")
+  };
+
+  const dom = { channels: {} };
+  let state = createDefaultState();
+  let activeChannelCount = 2;
+  let digitCache = Object.fromEntries(CHANNEL_IDS.map(ch => [ch, []]));
+  let currentDisplayed = Object.fromEntries(CHANNEL_IDS.map(ch => [ch, 0]));
+  let currentExact = Object.fromEntries(CHANNEL_IDS.map(ch => [ch, 0]));
+  let scrubTime = 0;
+  let graphData = [];
+  let graphDuration = 0;
+  let animationFrameId = null;
+  let lastSampleTime = 0;
+  let isPlaying = false;
+  let isPaused = false;
+  let pauseAt = 0;
+  let settingsLoaded = false;
+  let saveTimer = null;
+  let statusToastTimer = null;
+  let graphEditEnabled = false;
+  let graphHover = null;
+  let graphSelection = null;
+  let graphDrag = null;
+  let graphMetrics = null;
+
+  function frame(time, value, easing="linear", jitter="none", jitterAmount=0, trip=false, bezier=null) {
+    return { time, value, easing, bezier, jitter, jitterAmount, trip };
+  }
+
+  function createDefaultState() {
+    return {
+      channels: {
+        A: {
+          config: { label:"Voltage", unit:"V", mode:"DC", decimals:0, digits:5, rounding:1 },
+          axis: { min:null, max:null }, collapsed:false,
+          frames: [frame(0,0,"easeIn"),frame(1,500),frame(2,1000),frame(3,1500),frame(4,2000),frame(4.15,0,"linear","none",0,true),frame(5,0)]
+        },
+        B: {
+          config: { label:"Current", unit:"mA", mode:"DC", decimals:0, digits:4, rounding:1 },
+          axis: { min:null, max:null }, collapsed:false,
+          frames: [frame(0,0,"easeIn"),frame(1.2,5),frame(2.3,15,"linear","settle",1),frame(3.2,30,"linear","settle",2),frame(4,60,"hold","spike",5,true),frame(4.08,0),frame(5,0)]
+        },
+        C: {
+          config: { label:"Temperature", unit:"°C", mode:"Sensor", decimals:1, digits:4, rounding:0.1 },
+          axis: { min:null, max:null }, collapsed:false,
+          frames: [frame(0,20,"easeInOut"),frame(1.5,25),frame(3.2,55,"easeOut"),frame(4,72,"overshoot"),frame(5,35)]
+        },
+        D: {
+          config: { label:"Speed", unit:"rpm", mode:"Sensor", decimals:0, digits:4, rounding:1 },
+          axis: { min:null, max:null }, collapsed:false,
+          frames: [frame(0,0,"easeIn"),frame(1,250),frame(2.6,900,"easeInOut"),frame(4,1400,"easeOut"),frame(4.3,600),frame(5,0)]
+        }
+      },
+      playback: { sampleRate:20, settleBias:1, spikeChance:0.08, timelineScale:1, loop:"once", contrast:"normal" }
+    };
+  }
+
+  function activeChannels() { return CHANNEL_IDS.slice(0, activeChannelCount); }
+  function clamp(value, min, max) { return Math.min(max, Math.max(min, value)); }
+  function roundToStep(value, step) { return step > 0 ? Math.round(value / step) * step : value; }
+  function optionHtml(options, selected) { return options.map(([value,label]) => `<option value="${value}" ${value===selected?"selected":""}>${label}</option>`).join(""); }
+  function fmt(value, ch) { return Number(value).toFixed(state.channels[ch].config.decimals); }
+  function escapeHtml(value) { return String(value).replace(/[&<>"]/g, char => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[char])); }
+
+  function cleanBezier(bezier) {
+    if (!bezier) return null;
+    let x1,y1,x2,y2;
+    if (Array.isArray(bezier) && bezier.length >= 4) [x1,y1,x2,y2] = bezier;
+    else if (typeof bezier === "object") ({x1,y1,x2,y2} = bezier);
+    x1=Number(x1); y1=Number(y1); x2=Number(x2); y2=Number(y2);
+    if (![x1,y1,x2,y2].every(Number.isFinite)) return null;
+    x1=clamp(x1,0,1); x2=clamp(x2,0,1);
+    if (x1 > x2) [x1,x2] = [x2,x1];
+    return {x1,y1,x2,y2};
+  }
+
+  function normFrames(frames) {
+    const normalised = (Array.isArray(frames) ? frames : []).map(item => ({
+      time: Math.max(0, Number(item.time) || 0),
+      value: Number(item.value) || 0,
+      easing: easingOptions.some(([value]) => value === item.easing) ? item.easing : "linear",
+      bezier: cleanBezier(item.bezier),
+      jitter: jitterOptions.some(([value]) => value === item.jitter) ? item.jitter : "none",
+      jitterAmount: Math.max(0, Number(item.jitterAmount) || 0),
+      trip: Boolean(item.trip)
+    })).sort((a,b) => a.time - b.time);
+    if (!normalised.length) normalised.push(frame(0,0));
+    normalised[0].time = 0;
+    return normalised;
+  }
+
+  function normaliseAllChannels() {
+    CHANNEL_IDS.forEach(ch => { state.channels[ch].frames = normFrames(state.channels[ch].frames); });
+  }
+
+  function cubicCoordinate(t,p0,p1,p2,p3) {
+    const mt = 1 - t;
+    return mt*mt*mt*p0 + 3*mt*mt*t*p1 + 3*mt*t*t*p2 + t*t*t*p3;
+  }
+  function cubicDerivative(t,p0,p1,p2,p3) {
+    const mt = 1 - t;
+    return 3*mt*mt*(p1-p0) + 6*mt*t*(p2-p1) + 3*t*t*(p3-p2);
+  }
+  function solveBezierParameter(x,x1,x2) {
+    x = clamp(x,0,1);
+    let t = x;
+    for (let i=0;i<7;i++) {
+      const estimate = cubicCoordinate(t,0,x1,x2,1) - x;
+      const derivative = cubicDerivative(t,0,x1,x2,1);
+      if (Math.abs(estimate) < 1e-6) return t;
+      if (Math.abs(derivative) < 1e-6) break;
+      t = clamp(t - estimate / derivative, 0, 1);
+    }
+    let low=0, high=1;
+    for (let i=0;i<18;i++) {
+      const estimate = cubicCoordinate(t,0,x1,x2,1);
+      if (Math.abs(estimate-x) < 1e-6) break;
+      if (estimate < x) low = t; else high = t;
+      t = (low + high) / 2;
+    }
+    return t;
+  }
+  function presetBezier(type,start,end) {
+    const preset = bezierPresetMap[type] || bezierPresetMap.linear;
+    const delta = end.value - start.value;
+    return {x1:preset[0],y1:start.value+delta*preset[1],x2:preset[2],y2:start.value+delta*preset[3]};
+  }
+  function segmentBezier(start,end) { return cleanBezier(start.bezier) || presetBezier(start.easing,start,end); }
+  function customBezierValue(progress,start,end) {
+    const bezier = segmentBezier(start,end);
+    const t = solveBezierParameter(progress,bezier.x1,bezier.x2);
+    return cubicCoordinate(t,start.value,bezier.y1,bezier.y2,end.value);
+  }
+  function curveEditable(frameItem) { return frameItem && frameItem.easing !== "stepped" && frameItem.easing !== "hold"; }
+  function ease(progress,type) {
+    if (type === "easeIn") return progress*progress*progress;
+    if (type === "easeOut") return 1-Math.pow(1-progress,3);
+    if (type === "easeInOut") return progress<0.5 ? 4*progress*progress*progress : 1-Math.pow(-2*progress+2,3)/2;
+    if (type === "overshoot") { const c1=1.70158,c3=c1+1; return 1+c3*Math.pow(progress-1,3)+c1*Math.pow(progress-1,2); }
+    if (type === "stepped") return Math.round(progress*20)/20;
+    if (type === "hold") return progress<0.96 ? 0 : 1;
+    return progress;
+  }
+
+  function getDuration() {
+    normaliseAllChannels();
+    return Math.max(0, ...activeChannels().flatMap(ch => state.channels[ch].frames.map(item => item.time)));
+  }
+
+  function getJitter(frameItem, progress) {
+    const amount = frameItem.jitterAmount;
+    if (amount <= 0 || frameItem.jitter === "none") return 0;
+    if (frameItem.jitter === "spike") {
+      const chance = clamp(Number(el.spikeChanceInput.value) || 0.08, 0, 1);
+      if (Math.random() < chance) return (Math.random()*2-1)*amount*3;
+      return (Math.random()*2-1)*amount*0.2;
+    }
+    if (frameItem.jitter === "settle") {
+      const damping = Math.max(0.1, Number(el.settleBiasInput.value) || 1);
+      return (Math.random()*2-1)*amount*Math.pow(1-progress,damping);
+    }
+    return (Math.random()*2-1)*amount;
+  }
+
+  function valueAtChannel(ch,time,includeJitter=false) {
+    const frames = state.channels[ch].frames = normFrames(state.channels[ch].frames);
+    if (frames.length === 1 || time <= frames[0].time) return frames[0].value;
+    for (let index=0; index<frames.length-1; index++) {
+      const start=frames[index], end=frames[index+1];
+      if (time >= start.time && time <= end.time) {
+        const span=Math.max(0.00001,end.time-start.time);
+        const progress=clamp((time-start.time)/span,0,1);
+        const base=start.easing === "custom" ? customBezierValue(progress,start,end) : start.value+(end.value-start.value)*ease(progress,start.easing);
+        return base + (includeJitter ? getJitter(start,progress) : 0);
+      }
+    }
+    return frames[frames.length-1].value;
+  }
+
+  function getValuesAt(time,includeJitter=false) {
+    const values = {};
+    activeChannels().forEach(ch => { values[ch] = valueAtChannel(ch,time,includeJitter); });
+    return values;
+  }
+
+  function buildDigit() {
+    const digit=document.createElement("div"); digit.className="digit";
+    ["a","b","c","d","e","f","g"].forEach(name => { const segment=document.createElement("div"); segment.className=`segment ${name}`; digit.appendChild(segment); });
+    const decimal=document.createElement("div"); decimal.className="decimal"; digit.appendChild(decimal);
+    return digit;
+  }
+
+  function renderDigits(ch) {
+    const channelDom=dom.channels[ch];
+    if (!channelDom) return;
+    const cfg=state.channels[ch].config;
+    if (digitCache[ch].length === cfg.digits && channelDom.digits.children.length === cfg.digits) return;
+    channelDom.digits.innerHTML="";
+    digitCache[ch]=[];
+    for (let i=0;i<cfg.digits;i++) { const digit=buildDigit(); channelDom.digits.appendChild(digit); digitCache[ch].push(digit); }
+  }
+
+  function getLimit(ch) {
+    const cfg=state.channels[ch].config;
+    return Math.pow(10,cfg.digits-cfg.decimals)-Math.pow(10,-cfg.decimals);
+  }
+
+  function displayChannel(ch,rawValue) {
+    const channelDom=dom.channels[ch];
+    if (!channelDom) return rawValue;
+    renderDigits(ch);
+    const cfg=state.channels[ch].config;
+    const rounded=roundToStep(rawValue,cfg.rounding);
+    const value=clamp(rounded,-getLimit(ch),getLimit(ch));
+    const negative=value<0;
+    const absText=Math.abs(value).toFixed(cfg.decimals);
+    const parts=absText.split(".");
+    const rawDigits=parts[0]+(parts[1]||"");
+    const padded=rawDigits.padStart(cfg.digits," ").slice(-cfg.digits);
+    const padCount=cfg.digits-rawDigits.length;
+    const decimalAfter=cfg.decimals>0 ? padCount+parts[0].length-1 : -1;
+    channelDom.minus.classList.toggle("on",negative);
+    digitCache[ch].forEach((digitElement,index) => {
+      const char=padded[index]||" ";
+      const active=segmentMap[char]||[];
+      digitElement.querySelectorAll(".segment").forEach(segment => {
+        const name=Array.from(segment.classList).find(className => className.length===1);
+        segment.classList.toggle("on",active.includes(name));
+      });
+      digitElement.querySelector(".decimal").classList.toggle("on",decimalAfter===index);
+    });
+    currentDisplayed[ch]=value;
+    return value;
+  }
+
+  function updateLabels() {
+    activeChannels().forEach(ch => {
+      const d=dom.channels[ch], cfg=state.channels[ch].config;
+      d.labelStatus.textContent=cfg.label || `Channel ${ch}`;
+      d.modeStatus.textContent=cfg.mode || "";
+      d.unitLabel.textContent=cfg.unit || "";
+      if (d.legendLabel) d.legendLabel.textContent=cfg.label || `Channel ${ch}`;
+      if (d.valueHeader) d.valueHeader.textContent=cfg.unit ? `Value (${cfg.unit})` : "Value";
+      if (d.timelineTitle) d.timelineTitle.textContent=`${cfg.label || `Channel ${ch}`} timeline`;
+    });
+    updateGraphEditChannelOptions();
+  }
+
+  function displayValues(values) {
+    const parts=[`${scrubTime.toFixed(2)} s`];
+    activeChannels().forEach(ch => {
+      currentExact[ch]=values[ch];
+      const displayed=displayChannel(ch,values[ch]);
+      const cfg=state.channels[ch].config;
+      parts.push(`${ch}: ${fmt(displayed,ch)}${cfg.unit ? ` ${cfg.unit}` : ""}`);
+    });
+    el.readoutPill.textContent=parts.join(" · ");
+  }
+
+  function setContrast(mode) {
+    if (mode === "high") {
+      document.documentElement.style.setProperty("--seg","#070b08");
+      document.documentElement.style.setProperty("--segOff","rgba(24,32,27,.13)");
+    } else if (mode === "faded") {
+      document.documentElement.style.setProperty("--seg","rgba(24,32,27,.68)");
+      document.documentElement.style.setProperty("--segOff","rgba(24,32,27,.055)");
+    } else {
+      document.documentElement.style.setProperty("--seg","#18201b");
+      document.documentElement.style.setProperty("--segOff","rgba(24,32,27,.08)");
+    }
+  }
+
+  function channelReadoutHtml(ch) {
+    const cfg=state.channels[ch].config;
+    return `<div class="bezel" data-channel="${ch}"><div class="lcd"><div class="lcd-top"><div class="lcd-status"><span id="label${ch}Status">${escapeHtml(cfg.label)}</span><span id="mode${ch}Status">${escapeHtml(cfg.mode)}</span></div><div class="lcd-unit" id="unit${ch}Label">${escapeHtml(cfg.unit)}</div></div><div class="display-row"><div class="minus" id="minus${ch}"></div><div class="digit-container" id="digits${ch}"></div></div></div></div>`;
+  }
+
+  function channelAxisHtml(ch) {
+    const cfg=state.channels[ch].config;
+    const axis=state.channels[ch].axis;
+    return `<div class="graph-range-channel" style="--channel-accent:${CHANNEL_STYLE[ch].css}"><div class="graph-range-channel-title"><span>Channel ${ch}</span><span>${escapeHtml(cfg.label)}</span></div><div><label for="graphMin${ch}Input">Minimum</label><input id="graphMin${ch}Input" placeholder="Auto" step="any" type="number" value="${axis.min??""}"></div><div><label for="graphMax${ch}Input">Maximum</label><input id="graphMax${ch}Input" placeholder="Auto" step="any" type="number" value="${axis.max??""}"></div></div>`;
+  }
+
+  function channelTimelineHtml(ch) {
+    const cfg=state.channels[ch].config;
+    return `<div class="card timeline-card" id="timeline${ch}Card" style="--channel-accent:${CHANNEL_STYLE[ch].css}"><div class="timeline-card-header"><div class="timeline-heading"><span aria-hidden="true" class="channel-token">${ch}</span><div><h2 id="timeline${ch}Title">${escapeHtml(cfg.label)} timeline</h2><p>Transition and noise settings apply from each keyframe to the next.</p></div></div><div class="timeline-header-actions"><span class="channel-summary" id="timeline${ch}Summary">0 keyframes</span><button class="add-keyframe-button" id="add${ch}Button" type="button">Add keyframe</button><button aria-controls="timeline${ch}Panel" aria-expanded="${!state.channels[ch].collapsed}" aria-label="${state.channels[ch].collapsed?"Expand":"Collapse"} Channel ${ch} timeline" class="disclosure-toggle timeline-disclosure-toggle" id="toggle${ch}Timeline" title="${state.channels[ch].collapsed?"Expand":"Collapse"} Channel ${ch} timeline" type="button"><span aria-hidden="true" class="disclosure-chevron">›</span></button></div></div><div class="timeline-card-body" id="timeline${ch}Panel"><div class="timeline-card-inner"><div class="table-wrap timeline-table-wrap"><table aria-label="Channel ${ch} keyframes" class="timeline-table"><colgroup><col style="width:5%"><col style="width:11%"><col style="width:12%"><col style="width:19%"><col style="width:18%"><col style="width:13%"><col style="width:10%"><col style="width:12%"></colgroup><thead><tr><th>#</th><th>Time (s)</th><th id="value${ch}Header">${cfg.unit?`Value (${escapeHtml(cfg.unit)})`:"Value"}</th><th title="How the value changes until the next keyframe">Transition</th><th title="Optional variation until the next keyframe">Noise</th><th>Amount</th><th>Trip mark</th><th>Action</th></tr></thead><tbody id="timeline${ch}Body"></tbody></table></div><div class="timeline-footnote">The final keyframe is an end point, so transition and noise settings do not apply to it.</div></div></div></div>`;
+  }
+
+  function channelSettingsHtml(ch) {
+    const cfg=state.channels[ch].config;
+    return `<div class="settings-group channel-settings" style="--channel-accent:${CHANNEL_STYLE[ch].css}"><div class="card-title"><h2>Channel ${ch}</h2><span>Readout and display</span></div><div class="channel-grid"><div><label for="label${ch}Input">Label</label><input id="label${ch}Input" maxlength="20" value="${escapeHtml(cfg.label)}"></div><div><label for="unit${ch}Input">Unit</label><input id="unit${ch}Input" maxlength="8" value="${escapeHtml(cfg.unit)}"></div><div><label for="mode${ch}Input">Mode</label><input id="mode${ch}Input" maxlength="12" value="${escapeHtml(cfg.mode)}"></div><div><label for="decimals${ch}Input">Decimal places</label><input id="decimals${ch}Input" max="4" min="0" type="number" value="${cfg.decimals}"></div><div><label for="digits${ch}Input">Display digits</label><input id="digits${ch}Input" max="8" min="1" type="number" value="${cfg.digits}"></div><div><label for="rounding${ch}Input">Rounding step</label><input id="rounding${ch}Input" min="0" step="0.001" type="number" value="${cfg.rounding}"></div></div></div>`;
+  }
+
+  function buildDynamicUI() {
+    const channels=activeChannels();
+    dom.channels={};
+    digitCache=Object.fromEntries(CHANNEL_IDS.map(ch => [ch, []]));
+
+    el.channelCountInput.value=String(activeChannelCount);
+    el.readouts.className=`readouts count-${activeChannelCount}`;
+    el.readouts.innerHTML=channels.map(channelReadoutHtml).join("");
+    el.graphRangeGrid.innerHTML=channels.map(channelAxisHtml).join("");
+    el.timelineGrid.innerHTML=channels.map(channelTimelineHtml).join("");
+    el.channelSettingsGrid.innerHTML=channels.map(channelSettingsHtml).join("");
+    el.graphLegend.innerHTML=channels.map(ch => `<span><span class="swatch" style="background:${CHANNEL_STYLE[ch].colour}"></span><span id="legend${ch}">${escapeHtml(state.channels[ch].config.label)}</span></span>`).join("") + `<span class="zero-key">Zero references</span><span><span class="swatch" style="background:#ff8d8d"></span>Trip marker</span>`;
+    el.graphStats.innerHTML=`<span id="sampleStats">Samples: 0</span><span id="durationStats">Duration: 0.00 s</span>`+channels.map(ch => `<span class="channel-range-stat" id="range${ch}Stats">${ch} range: –</span>`).join("");
+
+    channels.forEach(ch => {
+      dom.channels[ch]={
+        labelStatus: $(`label${ch}Status`), modeStatus:$(`mode${ch}Status`), unitLabel:$(`unit${ch}Label`), minus:$(`minus${ch}`), digits:$(`digits${ch}`),
+        axisMin:$(`graphMin${ch}Input`), axisMax:$(`graphMax${ch}Input`), legendLabel:$(`legend${ch}`), rangeStats:$(`range${ch}Stats`),
+        timelineCard:$(`timeline${ch}Card`), timelinePanel:$(`timeline${ch}Panel`), timelineSummary:$(`timeline${ch}Summary`), timelineBody:$(`timeline${ch}Body`), valueHeader:$(`value${ch}Header`), timelineTitle:$(`timeline${ch}Title`),
+        addButton:$(`add${ch}Button`), toggleButton:$(`toggle${ch}Timeline`),
+        labelInput:$(`label${ch}Input`), unitInput:$(`unit${ch}Input`), modeInput:$(`mode${ch}Input`), decimalsInput:$(`decimals${ch}Input`), digitsInput:$(`digits${ch}Input`), roundingInput:$(`rounding${ch}Input`)
+      };
+      attachChannelListeners(ch);
+      setTimelineCollapsed(ch,state.channels[ch].collapsed,{skipSave:true});
+      renderDigits(ch);
+    });
+    updateGraphEditChannelOptions(true);
+    renderTimelines();
+    updateLabels();
+    updateAxisSummary();
+  }
+
+  function attachChannelListeners(ch) {
+    const d=dom.channels[ch];
+    d.addButton.addEventListener("click",() => addKeyframe(ch));
+    d.toggleButton.addEventListener("click",() => setTimelineCollapsed(ch,!state.channels[ch].collapsed));
+
+    const configControls=[d.labelInput,d.unitInput,d.modeInput,d.decimalsInput,d.digitsInput,d.roundingInput];
+    const updateConfig=() => {
+      const cfg=state.channels[ch].config;
+      cfg.label=d.labelInput.value || `Channel ${ch}`;
+      cfg.unit=d.unitInput.value;
+      cfg.mode=d.modeInput.value;
+      cfg.decimals=clamp(Number(d.decimalsInput.value)||0,0,4);
+      cfg.digits=clamp(Number(d.digitsInput.value)||4,1,8);
+      cfg.rounding=Math.max(0,Number(d.roundingInput.value)||0);
+      renderDigits(ch);
+      updateLabels();
+      renderTimeline(ch);
+      displayValues(getValuesAt(scrubTime,false));
+      drawGraph();
+      scheduleSave();
+    };
+    configControls.forEach(control => { control.addEventListener("input",updateConfig); control.addEventListener("change",updateConfig); });
+
+    const updateAxis=() => {
+      state.channels[ch].axis.min=optionalNumber(d.axisMin);
+      state.channels[ch].axis.max=optionalNumber(d.axisMax);
+      updateAxisSummary();
+      drawGraph();
+      scheduleSave();
+    };
+    [d.axisMin,d.axisMax].forEach(control => { control.addEventListener("input",updateAxis); control.addEventListener("change",updateAxis); });
+  }
+
+  function setTimelineCollapsed(ch,collapsed,{skipSave=false}={}) {
+    const d=dom.channels[ch];
+    state.channels[ch].collapsed=Boolean(collapsed);
+    if (!d) return;
+    d.timelineCard.classList.toggle("is-collapsed",collapsed);
+    d.toggleButton.setAttribute("aria-expanded",String(!collapsed));
+    const action=collapsed?"Expand":"Collapse";
+    d.toggleButton.setAttribute("aria-label",`${action} Channel ${ch} timeline`);
+    d.toggleButton.title=`${action} Channel ${ch} timeline`;
+    if (!skipSave) scheduleSave();
+  }
+
+  function renderTimeline(ch) {
+    const d=dom.channels[ch];
+    if (!d) return;
+    const frames=state.channels[ch].frames=normFrames(state.channels[ch].frames);
+    const cfg=state.channels[ch].config;
+    d.timelineBody.innerHTML="";
+    d.timelineSummary.textContent=`${frames.length} keyframe${frames.length===1?"":"s"} · ${Math.max(0,frames.length-1)} segment${frames.length===2?"":"s"}`;
+    d.valueHeader.textContent=cfg.unit?`Value (${cfg.unit})`:"Value";
+
+    frames.forEach((item,index) => {
+      const isLast=index===frames.length-1;
+      const row=document.createElement("tr");
+      row.innerHTML=`
+        <td data-label="Keyframe"><span class="keyframe-number">${index+1}</span></td>
+        <td data-label="Time (s)"><input class="time-input" type="number" min="0" step="0.05" value="${item.time}" ${index===0?"disabled title=\"The first keyframe always starts at 0 seconds\"":""}></td>
+        <td data-label="Value${cfg.unit?` (${escapeHtml(cfg.unit)})`:""}"><input class="value-input" type="number" step="any" value="${item.value}"></td>
+        <td data-label="Transition">${isLast?'<span class="not-applicable">End point</span>':`<select class="easing-input">${optionHtml(easingOptions,item.easing)}</select>`}</td>
+        <td data-label="Noise">${isLast?'<span class="not-applicable">Not applicable</span>':`<select class="jitter-input">${optionHtml(jitterOptions,item.jitter)}</select>`}</td>
+        <td data-label="Noise amount">${isLast?'<span class="not-applicable">–</span>':`<input class="jitter-amount-input" type="number" min="0" step="any" value="${item.jitterAmount}" ${item.jitter==="none"?"disabled":""}>`}</td>
+        <td class="trip-cell" data-label="Trip mark"><label class="trip-toggle" title="Mark this time as a trip event"><input class="trip-input" type="checkbox" ${item.trip?"checked":""}><span class="trip-toggle-track"></span></label></td>
+        <td class="actions-cell" data-label="Action"><button class="remove-keyframe" type="button" ${frames.length<=1?"disabled":""}>Remove</button></td>`;
+
+      const afterEdit=(rerender=false) => {
+        stopPlayback();
+        state.channels[ch].frames=normFrames(frames);
+        if (rerender) renderTimeline(ch);
+        graphSelection=null;
+        syncSlider();
+        scrubTime=clamp(scrubTime,0,getDuration());
+        el.timeSlider.value=scrubTime;
+        displayValues(getValuesAt(scrubTime,false));
+        drawGraph();
+        updateTimelineSummary();
+        scheduleSave();
+      };
+
+      const timeInput=row.querySelector(".time-input");
+      if (index>0) timeInput.addEventListener("change",event => { frames[index].time=Math.max(0,Number(event.target.value)||0); afterEdit(true); });
+      row.querySelector(".value-input").addEventListener("change",event => { frames[index].value=Number(event.target.value)||0; afterEdit(false); });
+      const easingInput=row.querySelector(".easing-input");
+      if (easingInput) easingInput.addEventListener("change",event => {
+        const previous=frames[index].easing;
+        if (event.target.value === "custom" && index < frames.length-1 && !frames[index].bezier) frames[index].bezier=presetBezier(previous,frames[index],frames[index+1]);
+        if (event.target.value !== "custom") frames[index].bezier=null;
+        frames[index].easing=event.target.value;
+        afterEdit(false);
+      });
+      const jitterInput=row.querySelector(".jitter-input");
+      const jitterAmountInput=row.querySelector(".jitter-amount-input");
+      if (jitterInput) jitterInput.addEventListener("change",event => { frames[index].jitter=event.target.value; if (jitterAmountInput) jitterAmountInput.disabled=event.target.value==="none"; afterEdit(false); });
+      if (jitterAmountInput) jitterAmountInput.addEventListener("change",event => { frames[index].jitterAmount=Math.max(0,Number(event.target.value)||0); afterEdit(false); });
+      row.querySelector(".trip-input").addEventListener("change",event => { frames[index].trip=event.target.checked; afterEdit(false); });
+      row.querySelector(".remove-keyframe").addEventListener("click",() => { frames.splice(index,1); state.channels[ch].frames=frames; afterEdit(true); });
+      d.timelineBody.appendChild(row);
+    });
+    updateTimelineSummary();
+  }
+
+  function renderTimelines() { activeChannels().forEach(renderTimeline); updateTimelineSummary(); }
+  function updateTimelineSummary() {
+    const channels=activeChannels();
+    const totalSegments=channels.reduce((sum,ch)=>sum+Math.max(0,state.channels[ch].frames.length-1),0);
+    el.timelineSummary.textContent=`${channels.length} channel${channels.length===1?"":"s"} · ${totalSegments} segment${totalSegments===1?"":"s"} · ${getDuration().toFixed(2)} s`;
+  }
+
+  function addKeyframe(ch) {
+    const frames=state.channels[ch].frames=normFrames(state.channels[ch].frames);
+    const last=frames[frames.length-1];
+    frames.push(frame(last.time+1,last.value));
+    state.channels[ch].collapsed=false;
+    renderTimeline(ch);
+    setTimelineCollapsed(ch,false,{skipSave:true});
+    syncSlider(); drawGraph(); scheduleSave();
+    requestAnimationFrame(() => {
+      const row=dom.channels[ch].timelineBody.lastElementChild;
+      if (row) { row.classList.add("just-added"); row.scrollIntoView({behavior:"smooth",block:"nearest"}); const input=row.querySelector(".time-input"); if (input) input.focus(); }
+    });
+    setStatus(`Channel ${ch} keyframe added.`);
+  }
+
+  function syncSlider() {
+    const duration=getDuration();
+    el.timeSlider.min=0; el.timeSlider.max=Math.max(duration,0.01); el.timeSlider.step=0.01;
+    scrubTime=clamp(Number(el.timeSlider.value)||0,0,duration);
+    el.timeSlider.value=scrubTime;
+    el.rangeHint.textContent=`0.00–${duration.toFixed(2)} s`;
+  }
+
+  function updateFromScrubber() {
+    stopPlayback();
+    scrubTime=Number(el.timeSlider.value)||0;
+    displayValues(getValuesAt(scrubTime,false));
+    drawGraph();
+    scheduleSave();
+  }
+
+  function samplePath(duration,count=320) {
+    const samples=[];
+    for (let index=0;index<=count;index++) {
+      const time=duration*index/count;
+      samples.push({time,values:getValuesAt(time,false)});
+    }
+    return samples;
+  }
+
+  function clearGraph() { graphData=[]; graphDuration=getDuration(); drawGraph(); }
+  function addGraphPoint(time,values) { graphData.push({time,values:{...values}}); drawGraph(); }
+
+  function getRange(values) {
+    let min=Math.min(...values,0), max=Math.max(...values,0);
+    if (Math.abs(max-min)<1e-9) { min-=1; max+=1; }
+    const padding=(max-min)*0.1;
+    min=Math.min(min-padding,0); max=Math.max(max+padding,0);
+    return {min,max};
+  }
+  function optionalNumber(input) {
+    const raw=input.value.trim();
+    if (raw === "") return null;
+    const value=Number(raw);
+    return Number.isFinite(value)?value:null;
+  }
+
+  function getGraphRange(ch,values) {
+    const automatic=getRange(values);
+    const axis=state.channels[ch].axis;
+    const manualMin=axis.min, manualMax=axis.max;
+    const hasOne=(manualMin===null)!==(manualMax===null);
+    const invalid=manualMin!==null&&manualMax!==null&&manualMax<=manualMin;
+    const d=dom.channels[ch];
+    if (d) {
+      d.axisMin.classList.toggle("invalid",hasOne||invalid);
+      d.axisMax.classList.toggle("invalid",hasOne||invalid);
+      const message=hasOne?"Enter both the minimum and maximum.":invalid?"Maximum must be greater than minimum.":"";
+      d.axisMin.title=message; d.axisMax.title=message;
+    }
+    if (manualMin!==null&&manualMax!==null&&manualMax>manualMin) return {min:manualMin,max:manualMax,manual:true,invalid:false};
+    return {...automatic,manual:false,invalid:hasOne||invalid};
+  }
+
+  function selectedSegmentValid() {
+    if (!graphSelection) return false;
+    if (!activeChannels().includes(graphSelection.ch)) { graphSelection=null; return false; }
+    const frames=state.channels[graphSelection.ch].frames;
+    if (graphSelection.index<0||graphSelection.index>=frames.length-1) { graphSelection=null; return false; }
+    return true;
+  }
+
+  function getGraphDisplayRange(ch,values) {
+    const base=getGraphRange(ch,values);
+    if (!graphEditEnabled) return base;
+    let min=base.min,max=base.max;
+    if (selectedSegmentValid()&&graphSelection.ch===ch) {
+      const frames=state.channels[ch].frames,start=frames[graphSelection.index],end=frames[graphSelection.index+1];
+      if (start&&end&&curveEditable(start)) {
+        const bezier=segmentBezier(start,end);
+        min=Math.min(min,bezier.y1,bezier.y2); max=Math.max(max,bezier.y1,bezier.y2);
+      }
+    }
+    let span=max-min;
+    if (Math.abs(span)<1e-9) { const fallback=Math.max(Math.abs(max),1); min-=fallback/2; max+=fallback/2; span=max-min; }
+    const padding=span*EDIT_RANGE_PADDING_PER_SIDE;
+    return {...base,min:min-padding,max:max+padding,editExpanded:true};
+  }
+
+  function segmentValueAt(ch,index,progress) {
+    const frames=state.channels[ch].frames,start=frames[index],end=frames[index+1];
+    if (!start||!end) return start?start.value:0;
+    progress=clamp(progress,0,1);
+    return start.easing==="custom"?customBezierValue(progress,start,end):start.value+(end.value-start.value)*ease(progress,start.easing);
+  }
+
+  function graphValueAt(ch,time,source) {
+    if (!source.length) return valueAtChannel(ch,time,false);
+    if (time<=source[0].time) return source[0].values[ch];
+    for (let i=0;i<source.length-1;i++) {
+      const start=source[i],end=source[i+1];
+      if (time>=start.time&&time<=end.time) {
+        const span=Math.max(0.00001,end.time-start.time),p=(time-start.time)/span;
+        return start.values[ch]+(end.values[ch]-start.values[ch])*p;
+      }
+    }
+    return source[source.length-1].values[ch];
+  }
+
+  function drawGraph() {
+    const canvas=el.graphCanvas,ctx=canvas.getContext("2d"),dpr=window.devicePixelRatio||1,cw=canvas.clientWidth,ch=canvas.clientHeight;
+    if (!cw||!ch) return;
+    if (canvas.width!==Math.round(cw*dpr)||canvas.height!==Math.round(ch*dpr)) { canvas.width=Math.round(cw*dpr); canvas.height=Math.round(ch*dpr); }
+    ctx.setTransform(dpr,0,0,dpr,0,0); ctx.clearRect(0,0,cw,ch);
+
+    const channels=activeChannels();
+    const p={top:36,right:18,bottom:31,left:18};
+    const pw=cw-p.left-p.right,ph=ch-p.top-p.bottom;
+    const duration=graphDrag?graphDrag.duration:Math.max(graphDuration,getDuration(),1);
+    const staticSource=samplePath(duration);
+    const source=graphEditEnabled?staticSource:(graphData.length?graphData:staticSource);
+    const ranges={}; const yFns={};
+    channels.forEach(channel => {
+      ranges[channel]=graphDrag?graphDrag.ranges[channel]:getGraphDisplayRange(channel,staticSource.map(point=>point.values[channel]));
+      yFns[channel]=value=>p.top+(1-(value-ranges[channel].min)/(ranges[channel].max-ranges[channel].min))*ph;
+    });
+    const xFor=time=>p.left+time/duration*pw;
+    graphMetrics={p,pw,ph,duration,ranges,yFns,xFor,cw,ch,source};
+    el.graphShell.classList.toggle("curve-selected",graphEditEnabled&&selectedSegmentValid());
+
+    ctx.font="11px Arial";
+    channels.forEach((channel,index) => {
+      const range=ranges[channel],cfg=state.channels[channel].config;
+      const x=p.left+pw*(index+0.5)/channels.length;
+      ctx.textAlign="center";ctx.fillStyle=CHANNEL_STYLE[channel].colour;
+      const unit=cfg.unit?` ${cfg.unit}`:"";
+      ctx.fillText(`${channel} ${fmt(range.min,channel)}–${fmt(range.max,channel)}${unit}`,x,15);
+    });
+
+    ctx.strokeStyle="rgba(255,255,255,.08)";ctx.lineWidth=1;
+    for (let i=0;i<=4;i++) { const y=p.top+ph/4*i;ctx.beginPath();ctx.moveTo(p.left,y);ctx.lineTo(p.left+pw,y);ctx.stroke(); }
+    for (let i=0;i<=5;i++) { const x=p.left+pw/5*i;ctx.beginPath();ctx.moveTo(x,p.top);ctx.lineTo(x,p.top+ph);ctx.stroke(); }
+
+    channels.forEach(channel => {
+      const y=yFns[channel](0);
+      if (y<p.top||y>p.top+ph) return;
+      ctx.strokeStyle=CHANNEL_STYLE[channel].colour+"99";ctx.lineWidth=1.2;ctx.setLineDash(CHANNEL_STYLE[channel].dash);
+      ctx.beginPath();ctx.moveTo(p.left,y);ctx.lineTo(p.left+pw,y);ctx.stroke();ctx.setLineDash([]);
+    });
+
+    ctx.textAlign="center";ctx.fillStyle="rgba(255,255,255,.78)";ctx.font="12px Arial";
+    for (let i=0;i<=5;i++) { const time=duration/5*i;ctx.fillText(`${time.toFixed(1)} s`,xFor(time),p.top+ph+18); }
+
+    const markerTimes=new Map();
+    channels.forEach(channel => state.channels[channel].frames.forEach(item => {
+      const key=item.time.toFixed(6),existing=markerTimes.get(key)||{time:item.time,trip:false};existing.trip=existing.trip||item.trip;markerTimes.set(key,existing);
+    }));
+    ctx.setLineDash([5,5]);
+    markerTimes.forEach(item => { ctx.strokeStyle=item.trip?"rgba(255,141,141,.82)":"rgba(255,255,255,.20)";ctx.beginPath();ctx.moveTo(xFor(item.time),p.top);ctx.lineTo(xFor(item.time),p.top+ph);ctx.stroke(); });
+    ctx.setLineDash([]);
+
+    ctx.save();ctx.beginPath();ctx.rect(p.left,p.top,pw,ph);ctx.clip();
+    const editChannel=graphEditEnabled?getEditableChannel():null;
+    const drawChannels=graphEditEnabled?[...channels.filter(channel=>channel!==editChannel),editChannel]:channels;
+    drawChannels.forEach(channel => {
+      const yFn=yFns[channel],isEditable=graphEditEnabled&&channel===editChannel;
+      ctx.save();
+      ctx.globalAlpha=graphEditEnabled&&!isEditable?0.38:1;
+      if (isEditable) {
+        ctx.strokeStyle=CHANNEL_STYLE[channel].colour;ctx.lineWidth=8;ctx.globalAlpha=0.12;ctx.beginPath();
+        source.forEach((point,index) => { const x=xFor(point.time),y=yFn(point.values[channel]);if(index===0)ctx.moveTo(x,y);else ctx.lineTo(x,y); });ctx.stroke();
+        ctx.globalAlpha=1;
+      }
+      ctx.strokeStyle=CHANNEL_STYLE[channel].colour;ctx.lineWidth=isEditable?2.8:2;ctx.beginPath();
+      source.forEach((point,index) => { const x=xFor(point.time),y=yFn(point.values[channel]);if(index===0)ctx.moveTo(x,y);else ctx.lineTo(x,y); });ctx.stroke();
+      if (graphData.length&&!graphEditEnabled) { ctx.fillStyle=CHANNEL_STYLE[channel].colour;source.forEach(point => {ctx.beginPath();ctx.arc(xFor(point.time),yFn(point.values[channel]),2,0,Math.PI*2);ctx.fill();}); }
+      ctx.restore();
+    });
+
+    if (graphEditEnabled) drawGraphEditing(ctx,channels,xFor,yFns,p,pw,ph);
+
+    const scrubX=xFor(clamp(scrubTime,0,duration));
+    ctx.strokeStyle="rgba(255,255,255,.42)";ctx.lineWidth=1.7;ctx.beginPath();ctx.moveTo(scrubX,p.top);ctx.lineTo(scrubX,p.top+ph);ctx.stroke();
+    channels.forEach(channel => { const value=graphValueAt(channel,scrubTime,source);ctx.fillStyle=CHANNEL_STYLE[channel].colour;ctx.beginPath();ctx.arc(scrubX,yFns[channel](value),4.5,0,Math.PI*2);ctx.fill(); });
+    ctx.restore();
+
+    $("sampleStats").textContent=`Samples: ${graphData.length}`;
+    $("durationStats").textContent=`Duration: ${duration.toFixed(2)} s`;
+    channels.forEach(channel => {
+      const range=ranges[channel],cfg=state.channels[channel].config,mode=range.manual?"manual":"auto",edit=range.editExpanded?" · edit +25%":"";
+      dom.channels[channel].rangeStats.textContent=`${channel}: ${fmt(range.min,channel)} to ${fmt(range.max,channel)}${cfg.unit?` ${cfg.unit}`:""} · ${mode}${edit}`;
+    });
+    updateAxisSummary();
+  }
+
+  function drawGraphEditing(ctx,channels,xFor,yFns,p,pw,ph) {
+    const editChannel=getEditableChannel();
+    const frames=state.channels[editChannel].frames;
+    const yFn=yFns[editChannel];
+    if (!yFn) return;
+
+    if (graphHover&&graphHover.type==="segment"&&graphHover.ch===editChannel) {
+      const index=graphHover.index,start=frames[index],end=frames[index+1];
+      ctx.strokeStyle=CHANNEL_STYLE[editChannel].colour;ctx.lineWidth=10;ctx.globalAlpha=0.16;ctx.beginPath();
+      for (let i=0;i<=72;i++) { const progress=i/72,x=xFor(start.time+(end.time-start.time)*progress),y=yFn(segmentValueAt(editChannel,index,progress));if(i===0)ctx.moveTo(x,y);else ctx.lineTo(x,y); }
+      ctx.stroke();ctx.globalAlpha=1;
+      ctx.strokeStyle="rgba(255,255,255,.82)";ctx.lineWidth=3.2;ctx.beginPath();
+      for (let i=0;i<=72;i++) { const progress=i/72,x=xFor(start.time+(end.time-start.time)*progress),y=yFn(segmentValueAt(editChannel,index,progress));if(i===0)ctx.moveTo(x,y);else ctx.lineTo(x,y); }
+      ctx.stroke();
+    }
+
+    if (selectedSegmentValid()&&graphSelection.ch===editChannel) {
+      const index=graphSelection.index,start=frames[index],end=frames[index+1];
+      ctx.strokeStyle="rgba(255,210,138,.95)";ctx.lineWidth=5;ctx.globalAlpha=0.42;ctx.beginPath();
+      for (let i=0;i<=64;i++) { const progress=i/64,x=xFor(start.time+(end.time-start.time)*progress),y=yFn(segmentValueAt(editChannel,index,progress));if(i===0)ctx.moveTo(x,y);else ctx.lineTo(x,y); }
+      ctx.stroke();ctx.globalAlpha=1;
+      if (curveEditable(start)) {
+        const bezier=segmentBezier(start,end);
+        const controls=[{handle:1,x:xFor(start.time+(end.time-start.time)*bezier.x1),y:yFn(bezier.y1),anchorX:xFor(start.time),anchorY:yFn(start.value)},{handle:2,x:xFor(start.time+(end.time-start.time)*bezier.x2),y:yFn(bezier.y2),anchorX:xFor(end.time),anchorY:yFn(end.value)}];
+        controls.forEach(control => {
+          const hovered=graphHover&&graphHover.type==="bezier"&&graphHover.ch===editChannel&&graphHover.index===index&&graphHover.handle===control.handle;
+          ctx.strokeStyle="rgba(255,210,138,.58)";ctx.lineWidth=1.2;ctx.setLineDash([4,3]);ctx.beginPath();ctx.moveTo(control.anchorX,control.anchorY);ctx.lineTo(control.x,control.y);ctx.stroke();ctx.setLineDash([]);
+          if (hovered) {ctx.fillStyle="rgba(255,210,138,.13)";ctx.beginPath();ctx.arc(control.x,control.y,15,0,Math.PI*2);ctx.fill();}
+          ctx.fillStyle="#0c0e12";ctx.strokeStyle="#ffd28a";ctx.lineWidth=2;ctx.beginPath();ctx.arc(control.x,control.y,7,0,Math.PI*2);ctx.fill();ctx.stroke();ctx.fillStyle="#ffd28a";ctx.font="bold 9px Arial";ctx.textAlign="center";ctx.fillText(String(control.handle),control.x,control.y+3);
+        });
+      }
+    }
+
+    frames.forEach((item,index) => {
+      const x=xFor(item.time),y=yFn(item.value),hovered=graphHover&&graphHover.type==="keyframe"&&graphHover.ch===editChannel&&graphHover.index===index;
+      if (hovered) {ctx.fillStyle=CHANNEL_STYLE[editChannel].colour+"2A";ctx.beginPath();ctx.arc(x,y,14,0,Math.PI*2);ctx.fill();}
+      ctx.fillStyle=CHANNEL_STYLE[editChannel].colour;ctx.strokeStyle="#0c0e12";ctx.lineWidth=2;ctx.beginPath();ctx.arc(x,y,6,0,Math.PI*2);ctx.fill();ctx.stroke();
+    });
+  }
+
+  function updateAxisSummary() {
+    const channels=activeChannels();
+    let manual=0,invalid=0;
+    channels.forEach(ch => { const axis=state.channels[ch].axis;if(axis.min!==null&&axis.max!==null&&axis.max>axis.min)manual++;else if((axis.min===null)!==(axis.max===null)||(axis.min!==null&&axis.max!==null&&axis.max<=axis.min))invalid++; });
+    el.axisRangeSummary.textContent=invalid?"Check limits":manual===0?"Automatic":manual===channels.length?"All fixed":`${manual} fixed`;
+  }
+
+  function updateGraphEditChannelOptions(preserve=false) {
+    const channels=activeChannels();
+    const previous=preserve?el.graphEditChannelSelect.value:getEditableChannel();
+    el.graphEditChannelSelect.innerHTML=channels.map(ch => `<option value="${ch}">${ch} – ${escapeHtml(state.channels[ch].config.label)}</option>`).join("");
+    el.graphEditChannelSelect.value=channels.includes(previous)?previous:channels[0];
+  }
+  function getEditableChannel() { const value=el.graphEditChannelSelect.value;return activeChannels().includes(value)?value:activeChannels()[0]; }
+
+  function setGraphEditMode(enabled) {
+    graphEditEnabled=Boolean(enabled);
+    if (!enabled) { graphHover=null;graphSelection=null;graphDrag=null; }
+    el.graphEditToggle.setAttribute("aria-pressed",String(enabled));
+    el.graphEditToggle.textContent=enabled?"Done editing":"Edit graph";
+    el.graphEditToolbar.classList.toggle("is-active",enabled);
+    el.graphShell.classList.toggle("editing",enabled);
+    el.graphCanvas.style.cursor=enabled?"crosshair":"default";
+    if (enabled) el.graphEditStatus.textContent="Choose a channel, then drag a keyframe or select a segment. The active channel is brought to the front.";
+    drawGraph();
+  }
+
+  function canvasPoint(event) {
+    const rect=el.graphCanvas.getBoundingClientRect();
+    return {x:event.clientX-rect.left,y:event.clientY-rect.top};
+  }
+  function pointSegmentDistance(point,start,end) {
+    const dx=end.x-start.x,dy=end.y-start.y,lengthSquared=dx*dx+dy*dy;
+    if (!lengthSquared) return Math.hypot(point.x-start.x,point.y-start.y);
+    const t=clamp(((point.x-start.x)*dx+(point.y-start.y)*dy)/lengthSquared,0,1);
+    return Math.hypot(point.x-(start.x+t*dx),point.y-(start.y+t*dy));
+  }
+
+  function selectedBezierControls() {
+    if (!selectedSegmentValid()||!graphMetrics) return [];
+    const {ch,index}=graphSelection;
+    if (ch!==getEditableChannel()) return [];
+    const frames=state.channels[ch].frames,start=frames[index],end=frames[index+1];
+    if (!curveEditable(start)) return [];
+    const bezier=segmentBezier(start,end),xFor=graphMetrics.xFor,yFn=graphMetrics.yFns[ch];
+    return [{type:"bezier",ch,index,handle:1,x:xFor(start.time+(end.time-start.time)*bezier.x1),y:yFn(bezier.y1)},{type:"bezier",ch,index,handle:2,x:xFor(start.time+(end.time-start.time)*bezier.x2),y:yFn(bezier.y2)}];
+  }
+
+  function findGraphTarget(point) {
+    if (!graphMetrics) return null;
+    const ch=getEditableChannel(),frames=state.channels[ch].frames,xFor=graphMetrics.xFor,yFn=graphMetrics.yFns[ch];
+    const handles=selectedBezierControls();
+    for (const handle of handles) if (Math.hypot(point.x-handle.x,point.y-handle.y)<=BEZIER_HANDLE_HIT_RADIUS) return handle;
+
+    let nearestKeyframe=null,nearestKeyframeDistance=Infinity;
+    frames.forEach((item,index) => {
+      const x=xFor(item.time),y=yFn(item.value),distance=Math.hypot(point.x-x,point.y-y);
+      if (distance<nearestKeyframeDistance&&distance<=18) {nearestKeyframe={type:"keyframe",ch,index,x,y};nearestKeyframeDistance=distance;}
+    });
+    if (nearestKeyframe) return nearestKeyframe;
+
+    let nearestSegment=null,nearestSegmentDistance=Infinity;
+    for (let index=0;index<frames.length-1;index++) {
+      let previous={x:xFor(frames[index].time),y:yFn(frames[index].value)};
+      for (let step=1;step<=72;step++) {
+        const progress=step/72,current={x:xFor(frames[index].time+(frames[index+1].time-frames[index].time)*progress),y:yFn(segmentValueAt(ch,index,progress))};
+        const distance=pointSegmentDistance(point,previous,current);
+        if (distance<nearestSegmentDistance) {nearestSegment={type:"segment",ch,index};nearestSegmentDistance=distance;}
+        previous=current;
+      }
+    }
+    return nearestSegmentDistance<=18?nearestSegment:null;
+  }
+
+  function selectGraphSegment(hit) {
+    graphSelection={ch:hit.ch,index:hit.index}; graphHover=null;
+    const start=state.channels[hit.ch].frames[hit.index];
+    el.graphEditStatus.textContent=curveEditable(start)?`Channel ${hit.ch} segment ${hit.index+1} selected. Drag either numbered handle; vertical overshoot is allowed.`:"This transition is stepped or held. Choose a continuous transition in the timeline table first.";
+    drawGraph();
+  }
+
+  function beginGraphDrag(event,hit) {
+    if (!graphMetrics||hit.type==="segment") return;
+    const ranges=Object.fromEntries(activeChannels().map(ch=>[ch,{...graphMetrics.ranges[ch]}]));
+    graphDrag={...hit,pointerId:event.pointerId,duration:graphMetrics.duration,ranges};
+    el.graphCanvas.setPointerCapture(event.pointerId);el.graphCanvas.style.cursor="grabbing";
+    updateGraphEditStatus(hit);drawGraph();
+  }
+
+  function updateGraphEditStatus(hit) {
+    if (!hit) return;
+    const frames=state.channels[hit.ch].frames,cfg=state.channels[hit.ch].config;
+    if (hit.type==="keyframe") {
+      const item=frames[hit.index];el.graphEditStatus.textContent=`Drag ${cfg.label} keyframe ${hit.index+1}: ${item.time.toFixed(2)} s · ${fmt(item.value,hit.ch)}${cfg.unit?` ${cfg.unit}`:""}${hit.index===0?" · start time fixed":""}`;
+    } else if (hit.type==="bezier") {
+      const item=frames[hit.index],bezier=segmentBezier(item,frames[hit.index+1]),x=hit.handle===1?bezier.x1:bezier.x2,y=hit.handle===1?bezier.y1:bezier.y2;
+      el.graphEditStatus.textContent=`${cfg.label} segment ${hit.index+1} · handle ${hit.handle}: ${(x*100).toFixed(0)}% through time · ${fmt(y,hit.ch)}${cfg.unit?` ${cfg.unit}`:""}`;
+    }
+  }
+
+  function graphValueStep(ch,range) {
+    const cfg=state.channels[ch].config;
+    if (cfg.rounding>0) return Math.min(cfg.rounding,Math.max((range.max-range.min)/1000,Math.pow(10,-cfg.decimals)));
+    return Math.max((range.max-range.min)/1000,Math.pow(10,-Math.max(cfg.decimals,2)));
+  }
+
+  function updateGraphDrag(event) {
+    if (!graphDrag||!graphMetrics) return;
+    const point=canvasPoint(event),{p,pw,ph}=graphMetrics,ch=graphDrag.ch,frames=state.channels[ch].frames,range=graphDrag.ranges[ch];
+    if (graphDrag.type==="keyframe") {
+      const item=frames[graphDrag.index],x=clamp(point.x,p.left,p.left+pw),y=clamp(point.y,p.top,p.top+ph);
+      if (graphDrag.index===0) item.time=0;
+      else {
+        const previous=frames[graphDrag.index-1].time;
+        const following=graphDrag.index<frames.length-1?frames[graphDrag.index+1].time:graphDrag.duration;
+        const minTime=previous+0.01,maxTime=Math.max(minTime,following-0.01),rawTime=(x-p.left)/pw*graphDrag.duration;
+        item.time=clamp(Math.round(rawTime/0.05)*0.05,minTime,maxTime);
+      }
+      const rawValue=range.max-(y-p.top)/ph*(range.max-range.min);
+      item.value=roundToStep(rawValue,graphValueStep(ch,range));scrubTime=item.time;
+    } else {
+      const start=frames[graphDrag.index],end=frames[graphDrag.index+1],bezier=cleanBezier(start.bezier)||segmentBezier(start,end);
+      const startX=graphMetrics.xFor(start.time),endX=graphMetrics.xFor(end.time),spanX=Math.max(1,endX-startX);
+      const rawX=clamp((point.x-startX)/spanX,0,1),rangeSpan=range.max-range.min,rawValue=range.max-(point.y-p.top)/ph*rangeSpan,limitedValue=clamp(rawValue,range.min-rangeSpan*3,range.max+rangeSpan*3),step=graphValueStep(ch,range);
+      if (graphDrag.handle===1) { bezier.x1=clamp(Math.round(rawX*100)/100,0,Math.max(0,bezier.x2-0.01));bezier.y1=roundToStep(limitedValue,step); }
+      else { bezier.x2=clamp(Math.round(rawX*100)/100,Math.min(1,bezier.x1+0.01),1);bezier.y2=roundToStep(limitedValue,step); }
+      start.bezier=bezier;start.easing="custom";scrubTime=start.time+(end.time-start.time)*(graphDrag.handle===1?bezier.x1:bezier.x2);
+    }
+    state.channels[ch].frames=frames;el.timeSlider.value=scrubTime;displayValues(getValuesAt(scrubTime,false));updateGraphEditStatus(graphDrag);drawGraph();
+  }
+
+  function finishGraphDrag(event) {
+    if (!graphDrag) return;
+    try { if (el.graphCanvas.hasPointerCapture(event.pointerId)) el.graphCanvas.releasePointerCapture(event.pointerId); } catch (_) {}
+    const completed={...graphDrag};graphDrag=null;
+    graphHover=completed.type==="bezier"?{type:"bezier",ch:completed.ch,index:completed.index,handle:completed.handle}:{type:"keyframe",ch:completed.ch,index:completed.index};
+    renderTimeline(completed.ch);syncSlider();el.timeSlider.value=scrubTime;scheduleSave();
+    setStatus(completed.type==="bezier"?`Channel ${completed.ch} transition curve updated.`:`Channel ${completed.ch} keyframe updated.`);
+    const row=dom.channels[completed.ch].timelineBody.children[completed.index];if(row){row.classList.add("graph-updated");setTimeout(()=>row.classList.remove("graph-updated"),850);}
+    el.graphCanvas.style.cursor="grab";drawGraph();
+  }
+
+  function scrubGraphAt(point) {
+    if (!graphMetrics) return;
+    const {p,pw,duration}=graphMetrics;
+    scrubTime=clamp((point.x-p.left)/pw*duration,0,duration);
+    el.timeSlider.value=scrubTime;stopPlayback();displayValues(getValuesAt(scrubTime,false));drawGraph();scheduleSave();
+  }
+
+  function stopPlayback(resetProgress=true) {
+    if (animationFrameId!==null) { cancelAnimationFrame(animationFrameId);animationFrameId=null; }
+    isPlaying=false;isPaused=false;pauseAt=0;el.playButton.textContent="Play";el.previewCard.classList.remove("is-playing","is-paused");
+    if (resetProgress) el.progressBar.style.width="0%";
+  }
+  function pausePlayback() {
+    if (!isPlaying||isPaused) return;
+    isPaused=true;pauseAt=scrubTime;if(animationFrameId!==null){cancelAnimationFrame(animationFrameId);animationFrameId=null;}
+    el.playButton.textContent="Resume";el.previewCard.classList.remove("is-playing");el.previewCard.classList.add("is-paused");
+  }
+  function togglePlayPause() { if(isPlaying&&!isPaused)pausePlayback();else if(isPaused)playTimeline(pauseAt,true);else playTimeline(0,false); }
+
+  function playTimeline(startAt=0,preserveGraph=false) {
+    if (graphEditEnabled) setGraphEditMode(false);
+    if (animationFrameId!==null) cancelAnimationFrame(animationFrameId);
+    syncSlider();renderTimelines();
+    const duration=getDuration(),timeScale=clamp(Number(el.timelineScaleInput.value)||1,0.1,10),sampleInterval=1000/clamp(Number(el.sampleRateInput.value)||20,1,60);
+    if (duration<=0) return;
+    if (!preserveGraph) graphData=[];
+    isPlaying=true;isPaused=false;pauseAt=0;el.playButton.textContent="Pause";el.previewCard.classList.add("is-playing");el.previewCard.classList.remove("is-paused");graphDuration=duration;
+    const startTimelineTime=clamp(startAt,0,duration),startedAt=performance.now()-(startTimelineTime*1000*timeScale);lastSampleTime=performance.now()-sampleInterval;
+    function animation(now) {
+      const timelineTime=clamp((now-startedAt)/(1000*timeScale),0,duration),progress=duration>0?timelineTime/duration:1,shouldSample=now-lastSampleTime>=sampleInterval||progress===1;
+      if (shouldSample) {
+        lastSampleTime=now;scrubTime=timelineTime;el.timeSlider.value=scrubTime;
+        const values=progress===1?getValuesAt(duration,false):getValuesAt(timelineTime,true);
+        displayValues(values);addGraphPoint(timelineTime,values);
+      }
+      el.progressBar.style.width=`${progress*100}%`;
+      if (progress<1) animationFrameId=requestAnimationFrame(animation);
+      else {
+        animationFrameId=null;isPlaying=false;isPaused=false;pauseAt=0;el.playButton.textContent="Play";el.previewCard.classList.remove("is-playing","is-paused");
+        if (el.loopSelect.value==="loop") setTimeout(()=>playTimeline(0,false),250);
+      }
+    }
+    animationFrameId=requestAnimationFrame(animation);
+  }
+
+  function setStatus(message,{announce=true,error=false}={}) {
+    el.settingsStatus.textContent=message;el.settingsStatus.classList.toggle("is-error",error);el.settingsStatus.classList.remove("is-saving");
+    if (!announce) return;
+    clearTimeout(statusToastTimer);el.statusToast.textContent=message;el.statusToast.classList.add("is-visible");statusToastTimer=setTimeout(()=>el.statusToast.classList.remove("is-visible"),2600);
+  }
+  function scheduleSave() {
+    if (!settingsLoaded) return;
+    clearTimeout(saveTimer);el.settingsStatus.textContent="Saving…";el.settingsStatus.classList.add("is-saving");saveTimer=setTimeout(saveSettings,180);
+  }
+
+  function getSettings() {
+    const channels={};
+    CHANNEL_IDS.forEach(ch => { channels[ch]={frames:state.channels[ch].frames,config:{...state.channels[ch].config},axis:{...state.channels[ch].axis},collapsed:Boolean(state.channels[ch].collapsed)}; });
+    return {version:5,savedAt:new Date().toISOString(),activeChannelCount,channels,playback:{sampleRate:Number(el.sampleRateInput.value)||20,settleBias:Number(el.settleBiasInput.value)||1,spikeChance:Number(el.spikeChanceInput.value)||0.08,timelineScale:Number(el.timelineScaleInput.value)||1,loop:el.loopSelect.value,contrast:el.contrastSelect.value},ui:{scrubTime,presentationMode:document.body.classList.contains("presentation-mode")}};
+  }
+  function saveSettings() {
+    try { localStorage.setItem(STORAGE_KEY,JSON.stringify(getSettings()));if(settingsLoaded)setStatus("Saved locally",{announce:false}); }
+    catch (_) { setStatus("Settings could not be saved in this browser.",{error:true}); }
+  }
+
+  function validateSettings(settings) {
+    if (!settings||typeof settings!=="object") throw new Error("The file does not contain settings.");
+    const defaults=createDefaultState();
+    const channels={};
+    CHANNEL_IDS.forEach(ch => {
+      const source=settings.channels&&typeof settings.channels==="object"?settings.channels[ch]||{}:{};
+      const legacyFrames=settings[`frames${ch}`];
+      const sourceConfig=source.config&&typeof source.config==="object"?source.config:source;
+      const base=defaults.channels[ch];
+      channels[ch]={
+        frames:normFrames(Array.isArray(source.frames)?source.frames:Array.isArray(legacyFrames)?legacyFrames:base.frames),
+        config:{
+          label:String(sourceConfig.label??base.config.label).slice(0,20),unit:String(sourceConfig.unit??base.config.unit).slice(0,8),mode:String(sourceConfig.mode??base.config.mode).slice(0,12),
+          decimals:clamp(Number(sourceConfig.decimals??base.config.decimals),0,4),digits:clamp(Number(sourceConfig.digits??base.config.digits),1,8),rounding:Math.max(0,Number(sourceConfig.rounding??base.config.rounding)||0)
+        },
+        axis:{
+          min:Number.isFinite(Number(source.axis?.min))&&source.axis?.min!==null?Number(source.axis.min):(Number.isFinite(Number(settings.graphAxes?.[ch]?.min))&&settings.graphAxes?.[ch]?.min!==null?Number(settings.graphAxes[ch].min):null),
+          max:Number.isFinite(Number(source.axis?.max))&&source.axis?.max!==null?Number(source.axis.max):(Number.isFinite(Number(settings.graphAxes?.[ch]?.max))&&settings.graphAxes?.[ch]?.max!==null?Number(settings.graphAxes[ch].max):null)
+        },
+        collapsed:Boolean(source.collapsed??settings.ui?.collapsed?.[ch]??false)
+      };
+    });
+    return {activeChannelCount:clamp(Number(settings.activeChannelCount??2)||2,1,4),channels,playback:settings.playback&&typeof settings.playback==="object"?settings.playback:{},ui:settings.ui&&typeof settings.ui==="object"?settings.ui:{}};
+  }
+
+  function applySettings(settings,{skipSave=false,applyPresentationMode=false,status="Settings loaded."}={}) {
+    const clean=validateSettings(settings);stopPlayback();
+    state.channels=clean.channels;activeChannelCount=clean.activeChannelCount;
+    const playback=clean.playback;
+    el.sampleRateInput.value=clamp(Number(playback.sampleRate??20),1,60);
+    el.settleBiasInput.value=clamp(Number(playback.settleBias??1),0.1,5);
+    el.spikeChanceInput.value=clamp(Number(playback.spikeChance??0.08),0,1);
+    el.timelineScaleInput.value=clamp(Number(playback.timelineScale??1),0.1,10);
+    el.loopSelect.value=playback.loop==="loop"?"loop":"once";
+    el.contrastSelect.value=["normal","high","faded"].includes(playback.contrast)?playback.contrast:"normal";
+    setContrast(el.contrastSelect.value);
+    buildDynamicUI();syncSlider();scrubTime=clamp(Number(clean.ui.scrubTime)||0,0,getDuration());el.timeSlider.value=scrubTime;displayValues(getValuesAt(scrubTime,false));clearGraph();
+    if (applyPresentationMode) setPresentationMode(Boolean(clean.ui.presentationMode));
+    if (!skipSave) saveSettings();setStatus(status);
+  }
+
+  function loadSavedSettings() {
+    try {
+      const raw=localStorage.getItem(STORAGE_KEY)||localStorage.getItem(LEGACY_STORAGE_KEY);
+      settingsLoaded=true;if(!raw)return false;
+      applySettings(JSON.parse(raw),{skipSave:true,applyPresentationMode:false,status:"Saved settings loaded."});
+      if (!localStorage.getItem(STORAGE_KEY)) saveSettings();
+      return true;
+    } catch (_) { settingsLoaded=true;setStatus("Saved settings could not be loaded. The example is being used.",{error:true});return false; }
+  }
+
+  function exportSettings() {
+    saveSettings();
+    const blob=new Blob([JSON.stringify(getSettings(),null,2)],{type:"application/json"}),url=URL.createObjectURL(blob),link=document.createElement("a"),stamp=new Date().toISOString().slice(0,19).replace(/[:T]/g,"-");
+    link.href=url;link.download=`multi-channel-timeline-settings-${stamp}.json`;document.body.appendChild(link);link.click();link.remove();URL.revokeObjectURL(url);setStatus("Settings exported.");
+  }
+  function importSettings(file) {
+    if (!file) return;
+    const reader=new FileReader();
+    reader.onload=()=>{try{applySettings(JSON.parse(String(reader.result||"")),{status:"Imported settings loaded and saved."});}catch(error){setStatus(`Import failed: ${error.message}`,{error:true});}finally{el.importSettingsFile.value="";}};
+    reader.onerror=()=>setStatus("Import failed: the file could not be read.",{error:true});reader.readAsText(file);
+  }
+  function clearSavedSettings() { localStorage.removeItem(STORAGE_KEY);localStorage.removeItem(LEGACY_STORAGE_KEY);setStatus("Saved browser settings forgotten."); }
+
+  function resetExample() {
+    const count=activeChannelCount;state=createDefaultState();activeChannelCount=count;graphSelection=null;graphHover=null;graphData=[];scrubTime=0;buildDynamicUI();syncSlider();el.timeSlider.value=0;displayValues(getValuesAt(0,false));graphDuration=getDuration();drawGraph();saveSettings();setStatus("Example timelines restored.");
+  }
+
+  function changeChannelCount() {
+    stopPlayback();activeChannelCount=clamp(Number(el.channelCountInput.value)||2,1,4);graphSelection=null;graphHover=null;graphData=[];buildDynamicUI();syncSlider();scrubTime=clamp(scrubTime,0,getDuration());el.timeSlider.value=scrubTime;displayValues(getValuesAt(scrubTime,false));graphDuration=getDuration();drawGraph();scheduleSave();setStatus(`${activeChannelCount} channel${activeChannelCount===1?"":"s"} active.`);
+  }
+
+  function setPresentationMode(enabled) {
+    if (enabled&&graphEditEnabled) setGraphEditMode(false);
+    document.body.classList.toggle("presentation-mode",enabled);el.presentationToggle.textContent=enabled?"Leave presentation mode":"Present";drawGraph();scheduleSave();
+  }
+  function isTypingTarget(target) { if(!target)return false;const tag=target.tagName?target.tagName.toLowerCase():"";return tag==="input"||tag==="select"||tag==="textarea"||target.isContentEditable; }
+
+  el.channelCountInput.addEventListener("change",changeChannelCount);
+  el.timeSlider.addEventListener("input",updateFromScrubber);
+  el.playButton.addEventListener("click",togglePlayPause);
+  el.stopButton.addEventListener("click",()=>stopPlayback());
+  el.resetExampleButton.addEventListener("click",resetExample);
+  el.clearGraphButton.addEventListener("click",clearGraph);
+  el.clearSavedButton.addEventListener("click",clearSavedSettings);
+  el.presentationToggle.addEventListener("click",()=>setPresentationMode(!document.body.classList.contains("presentation-mode")));
+  el.presentationExit.addEventListener("click",()=>setPresentationMode(false));
+  el.exportSettingsButton.addEventListener("click",exportSettings);
+  el.importSettingsButton.addEventListener("click",()=>el.importSettingsFile.click());
+  el.importSettingsFile.addEventListener("change",event=>importSettings(event.target.files[0]));
+  el.resetGraphRangesButton.addEventListener("click",()=>{CHANNEL_IDS.forEach(ch=>{state.channels[ch].axis={min:null,max:null};if(dom.channels[ch]){dom.channels[ch].axisMin.value="";dom.channels[ch].axisMax.value="";}});drawGraph();updateAxisSummary();scheduleSave();setStatus("Graph axes set to automatic.");});
+  el.graphEditToggle.addEventListener("click",()=>setGraphEditMode(!graphEditEnabled));
+  el.graphEditChannelSelect.addEventListener("change",()=>{graphSelection=null;graphHover=null;el.graphEditStatus.textContent=`Channel ${getEditableChannel()} selected. Drag a keyframe, or select a segment to shape its curve.`;drawGraph();});
+
+  [el.sampleRateInput,el.settleBiasInput,el.spikeChanceInput,el.timelineScaleInput,el.loopSelect,el.contrastSelect].forEach(control => {
+    const update=()=>{setContrast(el.contrastSelect.value);state.playback={sampleRate:Number(el.sampleRateInput.value)||20,settleBias:Number(el.settleBiasInput.value)||1,spikeChance:Number(el.spikeChanceInput.value)||0.08,timelineScale:Number(el.timelineScaleInput.value)||1,loop:el.loopSelect.value,contrast:el.contrastSelect.value};displayValues(getValuesAt(scrubTime,false));drawGraph();scheduleSave();};
+    control.addEventListener("input",update);control.addEventListener("change",update);
+  });
+
+  el.graphCanvas.addEventListener("pointerdown",event=>{
+    const point=canvasPoint(event);
+    if(graphEditEnabled){const hit=findGraphTarget(point);if(hit){event.preventDefault();if(hit.type==="segment"){selectGraphSegment(hit);return;}beginGraphDrag(event,hit);return;}graphSelection=null;graphHover=null;}
+    scrubGraphAt(point);
+  });
+  el.graphCanvas.addEventListener("pointermove",event=>{
+    if(graphDrag){event.preventDefault();updateGraphDrag(event);return;}if(!graphEditEnabled)return;
+    const hit=findGraphTarget(canvasPoint(event)),signature=target=>target?`${target.type}:${target.ch}:${target.index}:${target.handle||0}`:"",changed=signature(hit)!==signature(graphHover);if(changed){graphHover=hit;drawGraph();}
+    el.graphCanvas.style.cursor=hit?(hit.type==="segment"?"pointer":"grab"):"crosshair";
+    if(hit){if(hit.type==="segment"){const frames=state.channels[hit.ch].frames,cfg=state.channels[hit.ch].config;el.graphEditStatus.textContent=`Select ${cfg.label} segment ${hit.index+1} (${frames[hit.index].time.toFixed(2)}–${frames[hit.index+1].time.toFixed(2)} s) to edit its curve.`;}else updateGraphEditStatus(hit);}
+    else if(selectedSegmentValid()){const {ch,index}=graphSelection,start=state.channels[ch].frames[index],cfg=state.channels[ch].config;el.graphEditStatus.textContent=curveEditable(start)?`${cfg.label} segment ${index+1} selected. Drag either numbered handle; vertical overshoot is allowed.`:"Choose a continuous transition in the timeline table to edit this segment as a curve.";}
+    else el.graphEditStatus.textContent=`Channel ${getEditableChannel()} selected. Drag a keyframe, or select a line segment to shape its transition.`;
+  });
+  el.graphCanvas.addEventListener("pointerup",finishGraphDrag);
+  el.graphCanvas.addEventListener("pointercancel",finishGraphDrag);
+  el.graphCanvas.addEventListener("pointerleave",()=>{if(graphDrag||!graphEditEnabled)return;graphHover=null;el.graphCanvas.style.cursor="crosshair";drawGraph();});
+
+  window.addEventListener("resize",drawGraph);
+  window.addEventListener("keydown",event=>{
+    if(isTypingTarget(event.target))return;
+    if(event.code==="Space"&&!event.repeat){event.preventDefault();togglePlayPause();return;}
+    if(event.key==="Escape"&&document.body.classList.contains("presentation-mode"))setPresentationMode(false);
+    if((event.key==="p"||event.key==="P")&&!event.repeat)setPresentationMode(!document.body.classList.contains("presentation-mode"));
+  });
+
+  function init() {
+    setContrast(el.contrastSelect.value);buildDynamicUI();syncSlider();scrubTime=0;el.timeSlider.value=0;displayValues(getValuesAt(0,false));graphDuration=getDuration();drawGraph();setGraphEditMode(false);
+    if(!loadSavedSettings()){settingsLoaded=true;setStatus("Saved locally",{announce:false});}
+  }
+  init();
+})();
+</script>
+</body>
+</html>
