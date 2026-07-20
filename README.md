@@ -6,6 +6,8 @@ The tool combines configurable seven-segment displays, keyframe-based signal tim
 
 It is delivered as a single self-contained HTML file and requires no build process, server, framework or external dependency.
 
+![Multi-channel Timeline Display Simulator with four active channels and editable Bézier transitions](docs/timeline-simulator.png)
+
 ## Features
 
 - Select between **one and four active channels**.
@@ -43,6 +45,8 @@ For a GitHub repository, rename the application file to `index.html`:
 
 ```text
 /
+├── docs/
+│   └── timeline-simulator.png
 ├── index.html
 └── README.md
 ```
